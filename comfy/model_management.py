@@ -370,8 +370,10 @@ def offloaded_memory(loaded_models, device):
             offloaded_mem += m.model_offloaded_memory()
     return offloaded_mem
 
+WINDOWS = any(platform.win32_ver())
+
 EXTRA_RESERVED_VRAM = 400 * 1024 * 1024
-if any(platform.win32_ver()):
+if WINDOWS:
     EXTRA_RESERVED_VRAM = 600 * 1024 * 1024 #Windows is higher because of the shared vram issue
 
 if args.reserve_vram is not None:
@@ -424,7 +426,7 @@ def free_memory(memory_required, device, keep_loaded=[]):
         shift_model = current_loaded_models[i]
         if shift_model.device == device:
             if shift_model not in keep_loaded:
-                can_unload.append((sys.getrefcount(shift_model.model), shift_model.model_memory(), i))
+                can_unload.append((-shift_model.model_offloaded_memory(), sys.getrefcount(shift_model.model), shift_model.model_memory(), i))
                 shift_model.currently_used = False
 
     for x in sorted(can_unload):
@@ -1002,7 +1004,10 @@ def should_use_fp16(device=None, model_params=0, prioritize_performance=True, ma
     nvidia_10_series = ["1080", "1070", "titan x", "p3000", "p3200", "p4000", "p4200", "p5000", "p5200", "p6000", "1060", "1050", "p40", "p100", "p6", "p4"]
     for x in nvidia_10_series:
         if x in props.name.lower():
-            return True
+            if WINDOWS or manual_cast:
+                return True
+            else:
+                return False #weird linux behavior where fp32 is faster
 
     if manual_cast:
         free_model_memory = maximum_vram_for_weights(device)
