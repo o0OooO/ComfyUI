@@ -7,9 +7,51 @@ import folder_paths
 import time
 from comfy.cli_args import args
 from app.logger import setup_logger
+import itertools
+import utils.extra_config
+import logging
+
+if __name__ == "__main__":
+    #NOTE: These do not do anything on core ComfyUI which should already have no communication with the internet, they are for custom nodes.
+    os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
+    os.environ['DO_NOT_TRACK'] = '1'
 
 
-setup_logger(verbose=args.verbose)
+setup_logger(log_level=args.verbose)
+
+def apply_custom_paths():
+    # extra model paths
+    extra_model_paths_config_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "extra_model_paths.yaml")
+    if os.path.isfile(extra_model_paths_config_path):
+        utils.extra_config.load_extra_path_config(extra_model_paths_config_path)
+
+    if args.extra_model_paths_config:
+        for config_path in itertools.chain(*args.extra_model_paths_config):
+            utils.extra_config.load_extra_path_config(config_path)
+
+    # --output-directory, --input-directory, --user-directory
+    if args.output_directory:
+        output_dir = os.path.abspath(args.output_directory)
+        logging.info(f"Setting output directory to: {output_dir}")
+        folder_paths.set_output_directory(output_dir)
+
+    # These are the default folders that checkpoints, clip and vae models will be saved to when using CheckpointSave, etc.. nodes
+    folder_paths.add_model_folder_path("checkpoints", os.path.join(folder_paths.get_output_directory(), "checkpoints"))
+    folder_paths.add_model_folder_path("clip", os.path.join(folder_paths.get_output_directory(), "clip"))
+    folder_paths.add_model_folder_path("vae", os.path.join(folder_paths.get_output_directory(), "vae"))
+    folder_paths.add_model_folder_path("diffusion_models",
+                                       os.path.join(folder_paths.get_output_directory(), "diffusion_models"))
+    folder_paths.add_model_folder_path("loras", os.path.join(folder_paths.get_output_directory(), "loras"))
+
+    if args.input_directory:
+        input_dir = os.path.abspath(args.input_directory)
+        logging.info(f"Setting input directory to: {input_dir}")
+        folder_paths.set_input_directory(input_dir)
+
+    if args.user_directory:
+        user_dir = os.path.abspath(args.user_directory)
+        logging.info(f"Setting user directory to: {user_dir}")
+        folder_paths.set_user_directory(user_dir)
 
 
 def execute_prestartup_script():
@@ -52,17 +94,16 @@ def execute_prestartup_script():
             print("{:6.1f} seconds{}:".format(n[0], import_message), n[1])
         print()
 
+apply_custom_paths()
 execute_prestartup_script()
 
 
 # Main code
 import asyncio
-import itertools
 import shutil
 import threading
 import gc
 
-import logging
 
 if os.name == "nt":
     logging.getLogger("xformers").addFilter(lambda record: 'A matching Triton is not available' not in record.getMessage())
@@ -70,6 +111,7 @@ if os.name == "nt":
 if __name__ == "__main__":
     if args.cuda_device is not None:
         os.environ['CUDA_VISIBLE_DEVICES'] = str(args.cuda_device)
+        os.environ['HIP_VISIBLE_DEVICES'] = str(args.cuda_device)
         logging.info("Set cuda device to: {}".format(args.cuda_device))
 
     if args.deterministic:
@@ -80,12 +122,12 @@ if __name__ == "__main__":
 
 if args.windows_standalone_build:
     try:
-        import fix_torch
+        from fix_torch import fix_pytorch_libomp
+        fix_pytorch_libomp()
     except:
         pass
 
 import comfy.utils
-import yaml
 
 import execution
 import server
@@ -105,6 +147,7 @@ def cuda_malloc_warning():
             logging.warning("\nWARNING: this card most likely does not support cuda-malloc, if you get \"CUDA error\" please run ComfyUI with: --disable-cuda-malloc\n")
 
 def prompt_worker(q, server):
+    current_time: float = 0.0
     e = execution.PromptExecutor(server, lru_size=args.cache_lru)
     last_gc_collect = 0
     need_gc = False
@@ -153,14 +196,16 @@ def prompt_worker(q, server):
         if need_gc:
             current_time = time.perf_counter()
             if (current_time - last_gc_collect) > gc_collect_interval:
-                comfy.model_management.cleanup_models()
                 gc.collect()
                 comfy.model_management.soft_empty_cache()
                 last_gc_collect = current_time
                 need_gc = False
 
 async def run(server, address='', port=8188, verbose=True, call_on_start=None):
-    await asyncio.gather(server.start(address, port, verbose, call_on_start), server.publish_loop())
+    addresses = []
+    for addr in address.split(","):
+        addresses.append((addr, port))
+    await asyncio.gather(server.start_multi_address(addresses, call_on_start), server.publish_loop())
 
 
 def hijack_progress(server):
@@ -178,27 +223,6 @@ def cleanup_temp():
     temp_dir = folder_paths.get_temp_directory()
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-def load_extra_path_config(yaml_path):
-    with open(yaml_path, 'r') as stream:
-        config = yaml.safe_load(stream)
-    for c in config:
-        conf = config[c]
-        if conf is None:
-            continue
-        base_path = None
-        if "base_path" in conf:
-            base_path = conf.pop("base_path")
-        for x in conf:
-            for y in conf[x].split("\n"):
-                if len(y) == 0:
-                    continue
-                full_path = y
-                if base_path is not None:
-                    full_path = os.path.join(base_path, full_path)
-                logging.info("Adding extra search path {} {}".format(x, full_path))
-                folder_paths.add_model_folder_path(x, full_path)
 
 
 if __name__ == "__main__":
@@ -220,14 +244,6 @@ if __name__ == "__main__":
     server = server.PromptServer(loop)
     q = execution.PromptQueue(server)
 
-    extra_model_paths_config_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "extra_model_paths.yaml")
-    if os.path.isfile(extra_model_paths_config_path):
-        load_extra_path_config(extra_model_paths_config_path)
-
-    if args.extra_model_paths_config:
-        for config_path in itertools.chain(*args.extra_model_paths_config):
-            load_extra_path_config(config_path)
-
     nodes.init_extra_nodes(init_custom_nodes=not args.disable_all_custom_nodes)
 
     cuda_malloc_warning()
@@ -237,32 +253,18 @@ if __name__ == "__main__":
 
     threading.Thread(target=prompt_worker, daemon=True, args=(q, server,)).start()
 
-    if args.output_directory:
-        output_dir = os.path.abspath(args.output_directory)
-        logging.info(f"Setting output directory to: {output_dir}")
-        folder_paths.set_output_directory(output_dir)
-
-    #These are the default folders that checkpoints, clip and vae models will be saved to when using CheckpointSave, etc.. nodes
-    folder_paths.add_model_folder_path("checkpoints", os.path.join(folder_paths.get_output_directory(), "checkpoints"))
-    folder_paths.add_model_folder_path("clip", os.path.join(folder_paths.get_output_directory(), "clip"))
-    folder_paths.add_model_folder_path("vae", os.path.join(folder_paths.get_output_directory(), "vae"))
-    folder_paths.add_model_folder_path("diffusion_models", os.path.join(folder_paths.get_output_directory(), "diffusion_models"))
-    folder_paths.add_model_folder_path("loras", os.path.join(folder_paths.get_output_directory(), "loras"))
-
-    if args.input_directory:
-        input_dir = os.path.abspath(args.input_directory)
-        logging.info(f"Setting input directory to: {input_dir}")
-        folder_paths.set_input_directory(input_dir)
-
     if args.quick_test_for_ci:
         exit(0)
 
+    os.makedirs(folder_paths.get_temp_directory(), exist_ok=True)
     call_on_start = None
     if args.auto_launch:
         def startup_server(scheme, address, port):
             import webbrowser
             if os.name == 'nt' and address == '0.0.0.0':
                 address = '127.0.0.1'
+            if ':' in address:
+                address = "[{}]".format(address)
             webbrowser.open(f"{scheme}://{address}:{port}")
         call_on_start = startup_server
 
