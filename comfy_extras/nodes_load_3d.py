@@ -26,23 +26,34 @@ class Load3D():
             "bg_color": ("STRING", {"default": "#000000", "multiline": False}),
             "light_intensity": ("INT", {"default": 10, "min": 1, "max": 20, "step": 1}),
             "up_direction": (["original", "-x", "+x", "-y", "+y", "-z", "+z"],),
+            "fov": ("INT", {"default": 75, "min": 10, "max": 150, "step": 1}),
         }}
 
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
     RETURN_NAMES = ("image", "mask", "mesh_path")
 
     FUNCTION = "process"
+    EXPERIMENTAL = True
 
     CATEGORY = "3d"
 
     def process(self, model_file, image, **kwargs):
-        imagepath = folder_paths.get_annotated_filepath(image)
+        if isinstance(image, dict):
+            image_path = folder_paths.get_annotated_filepath(image['image'])
+            mask_path = folder_paths.get_annotated_filepath(image['mask'])
 
-        load_image_node = nodes.LoadImage()
+            load_image_node = nodes.LoadImage()
+            output_image, ignore_mask = load_image_node.load_image(image=image_path)
+            ignore_image, output_mask = load_image_node.load_image(image=mask_path)
 
-        output_image, output_mask = load_image_node.load_image(image=imagepath)
-
-        return output_image, output_mask, model_file,
+            return output_image, output_mask, model_file,
+        else:
+            # to avoid the format is not dict which will happen the FE code is not compatibility to core,
+            # we need to this to double-check, it can be removed after merged FE into the core
+            image_path = folder_paths.get_annotated_filepath(image)
+            load_image_node = nodes.LoadImage()
+            output_image, output_mask = load_image_node.load_image(image=image_path)
+            return output_image, output_mask, model_file,
 
 class Load3DAnimation():
     @classmethod
@@ -66,30 +77,67 @@ class Load3DAnimation():
             "light_intensity": ("INT", {"default": 10, "min": 1, "max": 20, "step": 1}),
             "up_direction": (["original", "-x", "+x", "-y", "+y", "-z", "+z"],),
             "animation_speed": (["0.1", "0.5", "1", "1.5", "2"], {"default": "1"}),
+            "fov": ("INT", {"default": 75, "min": 10, "max": 150, "step": 1}),
         }}
 
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
     RETURN_NAMES = ("image", "mask", "mesh_path")
 
     FUNCTION = "process"
+    EXPERIMENTAL = True
 
     CATEGORY = "3d"
 
     def process(self, model_file, image, **kwargs):
-        imagepath = folder_paths.get_annotated_filepath(image)
+        if isinstance(image, dict):
+            image_path = folder_paths.get_annotated_filepath(image['image'])
+            mask_path = folder_paths.get_annotated_filepath(image['mask'])
 
-        load_image_node = nodes.LoadImage()
+            load_image_node = nodes.LoadImage()
+            output_image, ignore_mask = load_image_node.load_image(image=image_path)
+            ignore_image, output_mask = load_image_node.load_image(image=mask_path)
 
-        output_image, output_mask = load_image_node.load_image(image=imagepath)
+            return output_image, output_mask, model_file,
+        else:
+            image_path = folder_paths.get_annotated_filepath(image)
+            load_image_node = nodes.LoadImage()
+            output_image, output_mask = load_image_node.load_image(image=image_path)
+            return output_image, output_mask, model_file,
 
-        return output_image, output_mask, model_file,
+class Preview3D():
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "model_file": ("STRING", {"default": "", "multiline": False}),
+            "show_grid": ([True, False],),
+            "camera_type": (["perspective", "orthographic"],),
+            "view": (["front", "right", "top", "isometric"],),
+            "material": (["original", "normal", "wireframe", "depth"],),
+            "bg_color": ("STRING", {"default": "#000000", "multiline": False}),
+            "light_intensity": ("INT", {"default": 10, "min": 1, "max": 20, "step": 1}),
+            "up_direction": (["original", "-x", "+x", "-y", "+y", "-z", "+z"],),
+            "fov": ("INT", {"default": 75, "min": 10, "max": 150, "step": 1}),
+        }}
+
+    OUTPUT_NODE = True
+    RETURN_TYPES = ()
+
+    CATEGORY = "3d"
+
+    FUNCTION = "process"
+    EXPERIMENTAL = True
+
+    def process(self, model_file, **kwargs):
+        return {"ui": {"model_file": [model_file]}, "result": ()}
 
 NODE_CLASS_MAPPINGS = {
     "Load3D": Load3D,
-    "Load3DAnimation": Load3DAnimation
+    "Load3DAnimation": Load3DAnimation,
+    "Preview3D": Preview3D
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "Load3D": "Load 3D",
-    "Load3DAnimation": "Load 3D - Animation"
+    "Load3DAnimation": "Load 3D - Animation",
+    "Preview3D": "Preview 3D"
 }
