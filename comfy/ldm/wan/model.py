@@ -146,6 +146,15 @@ WAN_CROSSATTENTION_CLASSES = {
 }
 
 
+def repeat_e(e, x):
+    repeats = 1
+    if e.shape[1] > 1:
+        repeats = x.shape[1] // e.shape[1]
+    if repeats == 1:
+        return e
+    return torch.repeat_interleave(e, repeats, dim=1)
+
+
 class WanAttentionBlock(nn.Module):
 
     def __init__(self,
@@ -202,20 +211,23 @@ class WanAttentionBlock(nn.Module):
         """
         # assert e.dtype == torch.float32
 
-        e = (comfy.model_management.cast_to(self.modulation, dtype=x.dtype, device=x.device) + e).chunk(6, dim=1)
+        if e.ndim < 4:
+            e = (comfy.model_management.cast_to(self.modulation, dtype=x.dtype, device=x.device) + e).chunk(6, dim=1)
+        else:
+            e = (comfy.model_management.cast_to(self.modulation, dtype=x.dtype, device=x.device).unsqueeze(0) + e).unbind(2)
         # assert e[0].dtype == torch.float32
 
         # self-attention
         y = self.self_attn(
-            self.norm1(x) * (1 + e[1]) + e[0],
+            self.norm1(x) * (1 + repeat_e(e[1], x)) + repeat_e(e[0], x),
             freqs)
 
-        x = x + y * e[2]
+        x = x + y * repeat_e(e[2], x)
 
         # cross-attention & ffn
         x = x + self.cross_attn(self.norm3(x), context, context_img_len=context_img_len)
-        y = self.ffn(self.norm2(x) * (1 + e[4]) + e[3])
-        x = x + y * e[5]
+        y = self.ffn(self.norm2(x) * (1 + repeat_e(e[4], x)) + repeat_e(e[3], x))
+        x = x + y * repeat_e(e[5], x)
         return x
 
 
@@ -325,8 +337,12 @@ class Head(nn.Module):
             e(Tensor): Shape [B, C]
         """
         # assert e.dtype == torch.float32
-        e = (comfy.model_management.cast_to(self.modulation, dtype=x.dtype, device=x.device) + e.unsqueeze(1)).chunk(2, dim=1)
-        x = (self.head(self.norm(x) * (1 + e[1]) + e[0]))
+        if e.ndim < 3:
+            e = (comfy.model_management.cast_to(self.modulation, dtype=x.dtype, device=x.device) + e.unsqueeze(1)).chunk(2, dim=1)
+        else:
+            e = (comfy.model_management.cast_to(self.modulation, dtype=x.dtype, device=x.device).unsqueeze(0) + e.unsqueeze(2)).unbind(2)
+
+        x = (self.head(self.norm(x) * (1 + repeat_e(e[1], x)) + repeat_e(e[0], x)))
         return x
 
 
@@ -375,6 +391,7 @@ class WanModel(torch.nn.Module):
                  cross_attn_norm=True,
                  eps=1e-6,
                  flf_pos_embed_token_number=None,
+                 in_dim_ref_conv=None,
                  image_model=None,
                  device=None,
                  dtype=None,
@@ -468,6 +485,11 @@ class WanModel(torch.nn.Module):
         else:
             self.img_emb = None
 
+        if in_dim_ref_conv is not None:
+            self.ref_conv = operations.Conv2d(in_dim_ref_conv, dim, kernel_size=patch_size[1:], stride=patch_size[1:], device=operation_settings.get("device"), dtype=operation_settings.get("dtype"))
+        else:
+            self.ref_conv = None
+
     def forward_orig(
         self,
         x,
@@ -506,8 +528,16 @@ class WanModel(torch.nn.Module):
 
         # time embeddings
         e = self.time_embedding(
-            sinusoidal_embedding_1d(self.freq_dim, t).to(dtype=x[0].dtype))
-        e0 = self.time_projection(e).unflatten(1, (6, self.dim))
+            sinusoidal_embedding_1d(self.freq_dim, t.flatten()).to(dtype=x[0].dtype))
+        e = e.reshape(t.shape[0], -1, e.shape[-1])
+        e0 = self.time_projection(e).unflatten(2, (6, self.dim))
+
+        full_ref = None
+        if self.ref_conv is not None:
+            full_ref = kwargs.get("reference_latent", None)
+            if full_ref is not None:
+                full_ref = self.ref_conv(full_ref).flatten(2).transpose(1, 2)
+                x = torch.concat((full_ref, x), dim=1)
 
         # context
         context = self.text_embedding(context)
@@ -535,17 +565,30 @@ class WanModel(torch.nn.Module):
         # head
         x = self.head(x, e)
 
+        if full_ref is not None:
+            x = x[:, full_ref.shape[1]:]
+
         # unpatchify
         x = self.unpatchify(x, grid_sizes)
         return x
 
-    def forward(self, x, timestep, context, clip_fea=None, transformer_options={}, **kwargs):
+    def forward(self, x, timestep, context, clip_fea=None, time_dim_concat=None, transformer_options={}, **kwargs):
         bs, c, t, h, w = x.shape
         x = comfy.ldm.common_dit.pad_to_patch_size(x, self.patch_size)
+
         patch_size = self.patch_size
         t_len = ((t + (patch_size[0] // 2)) // patch_size[0])
         h_len = ((h + (patch_size[1] // 2)) // patch_size[1])
         w_len = ((w + (patch_size[2] // 2)) // patch_size[2])
+
+        if time_dim_concat is not None:
+            time_dim_concat = comfy.ldm.common_dit.pad_to_patch_size(time_dim_concat, self.patch_size)
+            x = torch.cat([x, time_dim_concat], dim=2)
+            t_len = ((x.shape[2] + (patch_size[0] // 2)) // patch_size[0])
+
+        if self.ref_conv is not None and "reference_latent" in kwargs:
+            t_len += 1
+
         img_ids = torch.zeros((t_len, h_len, w_len, 3), device=x.device, dtype=x.dtype)
         img_ids[:, :, :, 0] = img_ids[:, :, :, 0] + torch.linspace(0, t_len - 1, steps=t_len, device=x.device, dtype=x.dtype).reshape(-1, 1, 1)
         img_ids[:, :, :, 1] = img_ids[:, :, :, 1] + torch.linspace(0, h_len - 1, steps=h_len, device=x.device, dtype=x.dtype).reshape(1, -1, 1)
@@ -745,8 +788,7 @@ class CameraWanModel(WanModel):
         # embeddings
         x = self.patch_embedding(x.float()).to(x.dtype)
         if self.control_adapter is not None and camera_conditions is not None:
-            x_camera = self.control_adapter(camera_conditions).to(x.dtype)
-            x = x + x_camera
+            x = x + self.control_adapter(camera_conditions).to(x.dtype)
         grid_sizes = x.shape[2:]
         x = x.flatten(2).transpose(1, 2)
 
