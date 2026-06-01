@@ -2,14 +2,18 @@ import hashlib
 import logging
 import math
 import re
+from io import BytesIO
 
 import torch
 from typing_extensions import override
 
-from comfy_api.latest import IO, ComfyExtension, Input
+from comfy_api.latest import IO, ComfyExtension, Input, Types
 from comfy_api_nodes.apis.bytedance import (
     RECOMMENDED_PRESETS,
     RECOMMENDED_PRESETS_SEEDREAM_4,
+    RECOMMENDED_PRESETS_SEEDREAM_4_0,
+    RECOMMENDED_PRESETS_SEEDREAM_4_5,
+    RECOMMENDED_PRESETS_SEEDREAM_5_LITE,
     SEEDANCE2_PRICE_PER_1K_TOKENS,
     SEEDANCE2_REF_VIDEO_PIXEL_LIMITS,
     VIDEO_TASKS_EXECUTION_TIME,
@@ -40,15 +44,17 @@ from comfy_api_nodes.util import (
     ApiEndpoint,
     download_url_to_image_tensor,
     download_url_to_video_output,
+    downscale_image_tensor_by_max_side,
+    downscale_video_to_max_pixels,
     get_number_of_images,
     image_tensor_pair_to_batch,
     poll_op,
-    resize_video_to_pixel_budget,
     sync_op,
     upload_audio_to_comfyapi,
     upload_image_to_comfyapi,
     upload_images_to_comfyapi,
     upload_video_to_comfyapi,
+    upscale_video_to_min_pixels,
     validate_image_aspect_ratio,
     validate_image_dimensions,
     validate_string,
@@ -66,6 +72,12 @@ SEEDREAM_MODELS = {
     "seedream 5.0 lite": "seedream-5-0-260128",
     "seedream-4-5-251128": "seedream-4-5-251128",
     "seedream-4-0-250828": "seedream-4-0-250828",
+}
+
+SEEDREAM_PRESETS = {
+    "seedream-5-0-260128": RECOMMENDED_PRESETS_SEEDREAM_5_LITE,
+    "seedream-4-5-251128": RECOMMENDED_PRESETS_SEEDREAM_4_5,
+    "seedream-4-0-250828": RECOMMENDED_PRESETS_SEEDREAM_4_0,
 }
 
 # Long-running tasks endpoints(e.g., video)
@@ -101,13 +113,22 @@ def _validate_ref_video_pixels(video: Input.Video, model_id: str, resolution: st
     max_px = limits.get("max")
     if min_px and pixels < min_px:
         raise ValueError(
-            f"Reference video {index} is too small: {w}x{h} = {pixels:,}px. " f"Minimum is {min_px:,}px for this model."
+            f"Reference video {index} is too small: {w}x{h} = {pixels:,} total pixels. "
+            f"Minimum for this model is {min_px:,} total pixels."
         )
     if max_px and pixels > max_px:
         raise ValueError(
-            f"Reference video {index} is too large: {w}x{h} = {pixels:,}px. "
-            f"Maximum is {max_px:,}px for this model. Try downscaling the video."
+            f"Reference video {index} is too large: {w}x{h} = {pixels:,} total pixels. "
+            f"Maximum for this model is {max_px:,} total pixels. Try downscaling the video."
         )
+
+
+def _prepare_seedance_image(image: Input.Image) -> Input.Image:
+    """Auto-downscale a Seedance image input to the per-side limits, then validate it."""
+    validate_image_aspect_ratio(image, (2, 5), (5, 2), strict=False)  # 0.4 to 2.5
+    image = downscale_image_tensor_by_max_side(image, max_side=6000)
+    validate_image_dimensions(image, min_width=300, min_height=300, max_width=6000, max_height=6000)
+    return image
 
 
 async def _resolve_reference_assets(
@@ -297,6 +318,26 @@ async def _seedance_virtual_library_upload_image_asset(
     return f"asset://{create_resp.asset_id}"
 
 
+async def _seedance_virtual_library_upload_video_asset(
+    cls: type[IO.ComfyNode],
+    video: Input.Video,
+    *,
+    wait_label: str = "Uploading video",
+) -> str:
+    buf = BytesIO()
+    video.save_to(buf, format=Types.VideoContainer.MP4, codec=Types.VideoCodec.H264)
+    video_hash = hashlib.sha256(buf.getbuffer()).hexdigest()
+    public_url = await upload_video_to_comfyapi(cls, video, wait_label=wait_label)
+    create_resp = await sync_op(
+        cls,
+        ApiEndpoint(path="/proxy/seedance/virtual-library/assets", method="POST"),
+        response_model=SeedanceCreateAssetResponse,
+        data=SeedanceVirtualLibraryCreateAssetRequest(url=public_url, hash=video_hash, asset_type="Video"),
+    )
+    await _wait_for_asset_active(cls, create_resp.asset_id, group_id="virtual-library")
+    return f"asset://{create_resp.asset_id}"
+
+
 def _seedance2_price_extractor(model_id: str, has_video_input: bool):
     """Returns a price_extractor closure for Seedance 2.0 poll_op."""
     rate = SEEDANCE2_PRICE_PER_1K_TOKENS.get((model_id, has_video_input))
@@ -327,7 +368,7 @@ class ByteDanceImageNode(IO.ComfyNode):
         return IO.Schema(
             node_id="ByteDanceImageNode",
             display_name="ByteDance Image",
-            category="api node/image/ByteDance",
+            category="image/partner/ByteDance",
             description="Generate images using ByteDance models via api based on prompt",
             inputs=[
                 IO.Combo.Input("model", options=["seedream-3-0-t2i-250415"]),
@@ -451,7 +492,7 @@ class ByteDanceSeedreamNode(IO.ComfyNode):
         return IO.Schema(
             node_id="ByteDanceSeedreamNode",
             display_name="ByteDance Seedream 4.5 & 5.0",
-            category="api node/image/ByteDance",
+            category="image/partner/ByteDance",
             description="Unified text-to-image generation and precise single-sentence editing at up to 4K resolution.",
             inputs=[
                 IO.Combo.Input(
@@ -562,6 +603,7 @@ class ByteDanceSeedreamNode(IO.ComfyNode):
                 )
                 """,
             ),
+            is_deprecated=True,
         )
 
     @classmethod
@@ -651,6 +693,226 @@ class ByteDanceSeedreamNode(IO.ComfyNode):
         return IO.NodeOutput(torch.cat([await download_url_to_image_tensor(i) for i in urls]))
 
 
+def _seedream_model_inputs(*, max_ref_images: int, presets: list):
+    return [
+        IO.Combo.Input(
+            "size_preset",
+            options=[label for label, _, _ in presets],
+            tooltip="Pick a recommended size. Select Custom to use the width and height below.",
+        ),
+        IO.Int.Input(
+            "width",
+            default=2048,
+            min=1024,
+            max=6240,
+            step=2,
+            tooltip="Custom width for image. Value is working only if `size_preset` is set to `Custom`",
+        ),
+        IO.Int.Input(
+            "height",
+            default=2048,
+            min=1024,
+            max=4992,
+            step=2,
+            tooltip="Custom height for image. Value is working only if `size_preset` is set to `Custom`",
+        ),
+        IO.Int.Input(
+            "max_images",
+            default=1,
+            min=1,
+            max=max_ref_images,
+            step=1,
+            display_mode=IO.NumberDisplay.number,
+            tooltip="Maximum number of images to generate. With 1, exactly one image is produced. "
+            "With >1, the model generates between 1 and max_images related images "
+            "(e.g., story scenes, character variations). "
+            "Total images (input + generated) cannot exceed 15.",
+        ),
+        IO.Autogrow.Input(
+            "images",
+            template=IO.Autogrow.TemplateNames(
+                IO.Image.Input("image"),
+                names=[f"image_{i}" for i in range(1, max_ref_images + 1)],
+                min=0,
+            ),
+            tooltip=f"Optional reference image(s) for image-to-image or multi-reference generation. "
+            f"Up to {max_ref_images} images.",
+        ),
+        IO.Boolean.Input(
+            "fail_on_partial",
+            default=False,
+            tooltip="If enabled, abort execution if any requested images are missing or return an error.",
+            advanced=True,
+        ),
+    ]
+
+
+class ByteDanceSeedreamNodeV2(IO.ComfyNode):
+
+    @classmethod
+    def define_schema(cls):
+        return IO.Schema(
+            node_id="ByteDanceSeedreamNodeV2",
+            display_name="ByteDance Seedream 4.5 & 5.0",
+            category="image/partner/ByteDance",
+            description="Unified text-to-image generation and precise single-sentence editing at up to 4K resolution.",
+            inputs=[
+                IO.String.Input(
+                    "prompt",
+                    multiline=True,
+                    default="",
+                    tooltip="Text prompt for creating or editing an image.",
+                ),
+                IO.DynamicCombo.Input(
+                    "model",
+                    options=[
+                        IO.DynamicCombo.Option(
+                            "seedream 5.0 lite",
+                            _seedream_model_inputs(max_ref_images=14, presets=RECOMMENDED_PRESETS_SEEDREAM_5_LITE),
+                        ),
+                        IO.DynamicCombo.Option(
+                            "seedream-4-5-251128",
+                            _seedream_model_inputs(max_ref_images=10, presets=RECOMMENDED_PRESETS_SEEDREAM_4_5),
+                        ),
+                        IO.DynamicCombo.Option(
+                            "seedream-4-0-250828",
+                            _seedream_model_inputs(max_ref_images=10, presets=RECOMMENDED_PRESETS_SEEDREAM_4_0),
+                        ),
+                    ],
+                ),
+                IO.Int.Input(
+                    "seed",
+                    default=0,
+                    min=0,
+                    max=2147483647,
+                    step=1,
+                    display_mode=IO.NumberDisplay.number,
+                    control_after_generate=True,
+                    tooltip="Seed to use for generation.",
+                ),
+                IO.Boolean.Input(
+                    "watermark",
+                    default=False,
+                    tooltip='Whether to add an "AI generated" watermark to the image.',
+                    advanced=True,
+                ),
+            ],
+            outputs=[
+                IO.Image.Output(),
+            ],
+            hidden=[
+                IO.Hidden.auth_token_comfy_org,
+                IO.Hidden.api_key_comfy_org,
+                IO.Hidden.unique_id,
+            ],
+            is_api_node=True,
+            price_badge=IO.PriceBadge(
+                depends_on=IO.PriceBadgeDepends(widgets=["model"]),
+                expr="""
+                (
+                  $price := $contains(widgets.model, "5.0 lite") ? 0.035 :
+                            $contains(widgets.model, "4-5") ? 0.04 : 0.03;
+                  {
+                    "type":"usd",
+                    "usd": $price,
+                    "format": { "suffix":" x images/Run", "approximate": true }
+                  }
+                )
+                """,
+            ),
+        )
+
+    @classmethod
+    async def execute(
+        cls,
+        prompt: str,
+        model: dict,
+        seed: int = 0,
+        watermark: bool = False,
+    ) -> IO.NodeOutput:
+        validate_string(prompt, strip_whitespace=True, min_length=1)
+        model_id = SEEDREAM_MODELS[model["model"]]
+        presets = SEEDREAM_PRESETS[model_id]
+
+        size_preset = model.get("size_preset", presets[0][0])
+        width = model.get("width", 2048)
+        height = model.get("height", 2048)
+        max_images = model.get("max_images", 1)
+        sequential_image_generation = "disabled" if max_images == 1 else "auto"
+        images_dict = model.get("images") or {}
+        fail_on_partial = model.get("fail_on_partial", False)
+
+        w = h = None
+        for label, tw, th in presets:
+            if label == size_preset:
+                w, h = tw, th
+                break
+        if w is None or h is None:
+            w, h = width, height
+
+        out_num_pixels = w * h
+        mp_provided = out_num_pixels / 1_000_000.0
+        if ("seedream-4-5" in model_id or "seedream-5-0" in model_id) and out_num_pixels < 3686400:
+            raise ValueError(
+                f"Minimum image resolution for the selected model is 3.68MP, but {mp_provided:.2f}MP provided."
+            )
+        if "seedream-4-0" in model_id and out_num_pixels < 921600:
+            raise ValueError(
+                f"Minimum image resolution that the selected model can generate is 0.92MP, "
+                f"but {mp_provided:.2f}MP provided."
+            )
+        if out_num_pixels > 16_777_216:
+            raise ValueError(
+                f"Maximum image resolution for the selected model is 16.78MP, but {mp_provided:.2f}MP provided."
+            )
+
+        image_tensors: list[Input.Image] = [t for t in images_dict.values() if t is not None]
+        n_input_images = sum(get_number_of_images(t) for t in image_tensors)
+        max_num_of_images = 14 if model_id == "seedream-5-0-260128" else 10
+        if n_input_images > max_num_of_images:
+            raise ValueError(
+                f"Maximum of {max_num_of_images} reference images are supported, but {n_input_images} received."
+            )
+        if sequential_image_generation == "auto" and n_input_images + max_images > 15:
+            raise ValueError(
+                "The maximum number of generated images plus the number of reference images cannot exceed 15."
+            )
+
+        reference_images_urls: list[str] = []
+        if image_tensors:
+            for tensor in image_tensors:
+                validate_image_aspect_ratio(tensor, (1, 3), (3, 1))
+            reference_images_urls = await upload_images_to_comfyapi(
+                cls,
+                image_tensors,
+                max_images=n_input_images,
+                mime_type="image/png",
+                wait_label="Uploading reference images",
+            )
+
+        response = await sync_op(
+            cls,
+            ApiEndpoint(path=BYTEPLUS_IMAGE_ENDPOINT, method="POST"),
+            response_model=ImageTaskCreationResponse,
+            data=Seedream4TaskCreationRequest(
+                model=model_id,
+                prompt=prompt,
+                image=reference_images_urls,
+                size=f"{w}x{h}",
+                seed=seed,
+                sequential_image_generation=sequential_image_generation,
+                sequential_image_generation_options=Seedream4Options(max_images=max_images),
+                watermark=watermark,
+            ),
+        )
+        if len(response.data) == 1:
+            return IO.NodeOutput(await download_url_to_image_tensor(get_image_url_from_response(response)))
+        urls = [str(d["url"]) for d in response.data if isinstance(d, dict) and "url" in d]
+        if fail_on_partial and len(urls) < len(response.data):
+            raise RuntimeError(f"Only {len(urls)} of {len(response.data)} images were generated before error.")
+        return IO.NodeOutput(torch.cat([await download_url_to_image_tensor(i) for i in urls]))
+
+
 class ByteDanceTextToVideoNode(IO.ComfyNode):
 
     @classmethod
@@ -658,7 +920,7 @@ class ByteDanceTextToVideoNode(IO.ComfyNode):
         return IO.Schema(
             node_id="ByteDanceTextToVideoNode",
             display_name="ByteDance Text to Video",
-            category="api node/video/ByteDance",
+            category="video/partner/ByteDance",
             description="Generate video using ByteDance models via api based on prompt",
             inputs=[
                 IO.Combo.Input(
@@ -786,7 +1048,7 @@ class ByteDanceImageToVideoNode(IO.ComfyNode):
         return IO.Schema(
             node_id="ByteDanceImageToVideoNode",
             display_name="ByteDance Image to Video",
-            category="api node/video/ByteDance",
+            category="video/partner/ByteDance",
             description="Generate video using ByteDance models via api based on image and prompt",
             inputs=[
                 IO.Combo.Input(
@@ -923,7 +1185,7 @@ class ByteDanceFirstLastFrameNode(IO.ComfyNode):
         return IO.Schema(
             node_id="ByteDanceFirstLastFrameNode",
             display_name="ByteDance First-Last-Frame to Video",
-            category="api node/video/ByteDance",
+            category="video/partner/ByteDance",
             description="Generate video using prompt and first and last frames.",
             inputs=[
                 IO.Combo.Input(
@@ -1071,7 +1333,7 @@ class ByteDanceImageReferenceNode(IO.ComfyNode):
         return IO.Schema(
             node_id="ByteDanceImageReferenceNode",
             display_name="ByteDance Reference Images to Video",
-            category="api node/video/ByteDance",
+            category="video/partner/ByteDance",
             description="Generate video using prompt and reference images.",
             inputs=[
                 IO.Combo.Input(
@@ -1314,7 +1576,7 @@ class ByteDance2TextToVideoNode(IO.ComfyNode):
         return IO.Schema(
             node_id="ByteDance2TextToVideoNode",
             display_name="ByteDance Seedance 2.0 Text to Video",
-            category="api node/video/ByteDance",
+            category="video/partner/ByteDance",
             description="Generate video using Seedance 2.0 models based on a text prompt.",
             inputs=[
                 IO.DynamicCombo.Input(
@@ -1415,7 +1677,7 @@ class ByteDance2FirstLastFrameNode(IO.ComfyNode):
         return IO.Schema(
             node_id="ByteDance2FirstLastFrameNode",
             display_name="ByteDance Seedance 2.0 First-Last-Frame to Video",
-            category="api node/video/ByteDance",
+            category="video/partner/ByteDance",
             description="Generate video using Seedance 2.0 from a first frame image and optional last frame image.",
             inputs=[
                 IO.DynamicCombo.Input(
@@ -1446,14 +1708,14 @@ class ByteDance2FirstLastFrameNode(IO.ComfyNode):
                     "first_frame_asset_id",
                     default="",
                     tooltip="Seedance asset_id to use as the first frame. "
-                            "Mutually exclusive with the first_frame image input.",
+                    "Mutually exclusive with the first_frame image input.",
                     optional=True,
                 ),
                 IO.String.Input(
                     "last_frame_asset_id",
                     default="",
                     tooltip="Seedance asset_id to use as the last frame. "
-                            "Mutually exclusive with the last_frame image input.",
+                    "Mutually exclusive with the last_frame image input.",
                     optional=True,
                 ),
                 IO.Int.Input(
@@ -1527,6 +1789,11 @@ class ByteDance2FirstLastFrameNode(IO.ComfyNode):
             raise ValueError("Either first_frame or first_frame_asset_id is required.")
         if last_frame is not None and last_frame_asset_id:
             raise ValueError("Provide only one of last_frame or last_frame_asset_id, not both.")
+
+        if first_frame is not None:
+            first_frame = _prepare_seedance_image(first_frame)
+        if last_frame is not None:
+            last_frame = _prepare_seedance_image(last_frame)
 
         asset_ids_to_resolve = [a for a in (first_frame_asset_id, last_frame_asset_id) if a]
         image_assets: dict[str, str] = {}
@@ -1634,11 +1901,20 @@ def _seedance2_reference_inputs(resolutions: list[str], default_ratio: str = "16
         ),
         IO.Boolean.Input(
             "auto_downscale",
-            default=False,
-            advanced=True,
+            default=True,
             optional=True,
             tooltip="Automatically downscale reference videos that exceed the model's pixel budget "
             "for the selected resolution. Aspect ratio is preserved; videos already within limits are untouched.",
+        ),
+        IO.Boolean.Input(
+            "auto_upscale",
+            default=False,
+            advanced=True,
+            optional=True,
+            tooltip="Automatically upscale reference videos that are below the model's minimum pixel count "
+            "for the selected resolution. Aspect ratio is preserved; videos already meeting the minimum are "
+            "untouched. Note: upscaling a low-resolution source does not add real detail and may produce "
+            "lower-quality generations.",
         ),
         IO.Autogrow.Input(
             "reference_assets",
@@ -1668,7 +1944,7 @@ class ByteDance2ReferenceNode(IO.ComfyNode):
         return IO.Schema(
             node_id="ByteDance2ReferenceNode",
             display_name="ByteDance Seedance 2.0 Reference to Video",
-            category="api node/video/ByteDance",
+            category="video/partner/ByteDance",
             description="Generate, edit, or extend video using Seedance 2.0 with reference images, "
             "videos, and audio. Supports multimodal reference, video editing, and video extension.",
             inputs=[
@@ -1793,6 +2069,9 @@ class ByteDance2ReferenceNode(IO.ComfyNode):
                 f"(audios={len(reference_audios)}, audio assets={len(reference_audio_assets)}). Maximum is 3."
             )
 
+        for key in reference_images:
+            reference_images[key] = _prepare_seedance_image(reference_images[key])
+
         model_id = SEEDANCE_MODELS[model["model"]]
         has_video_input = total_videos > 0
 
@@ -1800,7 +2079,13 @@ class ByteDance2ReferenceNode(IO.ComfyNode):
             max_px = SEEDANCE2_REF_VIDEO_PIXEL_LIMITS.get(model_id, {}).get(model["resolution"], {}).get("max")
             if max_px:
                 for key in reference_videos:
-                    reference_videos[key] = resize_video_to_pixel_budget(reference_videos[key], max_px)
+                    reference_videos[key] = downscale_video_to_max_pixels(reference_videos[key], max_px)
+
+        if model.get("auto_upscale") and reference_videos:
+            min_px = SEEDANCE2_REF_VIDEO_PIXEL_LIMITS.get(model_id, {}).get(model["resolution"], {}).get("min")
+            if min_px:
+                for key in reference_videos:
+                    reference_videos[key] = upscale_video_to_min_pixels(reference_videos[key], min_px)
 
         total_video_duration = 0.0
         for i, key in enumerate(reference_videos, 1):
@@ -1859,7 +2144,7 @@ class ByteDance2ReferenceNode(IO.ComfyNode):
             content.append(
                 TaskVideoContent(
                     video_url=TaskVideoContentUrl(
-                        url=await upload_video_to_comfyapi(
+                        url=await _seedance_virtual_library_upload_video_asset(
                             cls,
                             reference_videos[key],
                             wait_label=f"Uploading video {i}",
@@ -1956,7 +2241,7 @@ class ByteDanceCreateImageAsset(IO.ComfyNode):
         return IO.Schema(
             node_id="ByteDanceCreateImageAsset",
             display_name="ByteDance Create Image Asset",
-            category="api node/image/ByteDance",
+            category="image/partner/ByteDance",
             description=(
                 "Create a Seedance 2.0 personal image asset. Uploads the input image and "
                 "registers it in the given asset group. If group_id is empty, runs a real-person "
@@ -2023,7 +2308,7 @@ class ByteDanceCreateVideoAsset(IO.ComfyNode):
         return IO.Schema(
             node_id="ByteDanceCreateVideoAsset",
             display_name="ByteDance Create Video Asset",
-            category="api node/video/ByteDance",
+            category="video/partner/ByteDance",
             description=(
                 "Create a Seedance 2.0 personal video asset. Uploads the input video and "
                 "registers it in the given asset group. If group_id is empty, runs a real-person "
@@ -2105,6 +2390,7 @@ class ByteDanceExtension(ComfyExtension):
         return [
             ByteDanceImageNode,
             ByteDanceSeedreamNode,
+            ByteDanceSeedreamNodeV2,
             ByteDanceTextToVideoNode,
             ByteDanceImageToVideoNode,
             ByteDanceFirstLastFrameNode,
