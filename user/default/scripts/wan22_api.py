@@ -596,6 +596,8 @@ def parse_args():
     p.add_argument("--audio-encoder", dest="audio_encoder",
                    default="wav2vec2_large_english_fp16.safetensors", help="s2v 音频编码器")
     p.add_argument("--server", default=DEFAULT_SERVER)
+    p.add_argument("--export-workflow", dest="export_workflow", metavar="PATH",
+                   help="只导出该 task 的 API 格式工作流 JSON 到 PATH,不连接服务、不生成")
 
     args = p.parse_args()
     if args.list_models:
@@ -607,8 +609,35 @@ def parse_args():
     return args
 
 
+class _ExportClient:
+    """离线导出用:upload_file 不连服务,只回传文件名(占位),供构建 API prompt。"""
+    def upload_file(self, filepath, kind="image"):
+        return os.path.basename(filepath) if filepath else f"<{kind}>"
+
+
 def main():
     args = parse_args()
+
+    # 仅导出工作流 JSON(不连服务、不生成)
+    if args.export_workflow:
+        # 为各 task 填占位素材,让 builder 的必填校验通过(导出的是结构,路径是占位)
+        args.image = args.image or "INPUT_IMAGE.png"
+        args.start = args.start or "START_FRAME.png"
+        args.end = args.end or "END_FRAME.png"
+        args.audio = args.audio or "INPUT_AUDIO.wav"
+        args.control_video = args.control_video or "CONTROL_VIDEO.mp4"
+        args.pose_video = args.pose_video or "POSE_VIDEO.mp4"
+        if not args.ref and args.task in ("vace", "phantom"):
+            args.ref = ["REF_IMAGE.png"]
+        print(f"[导出] 构建 {args.task} 工作流(API 格式)...")
+        prompt = BUILDERS[args.task](args, _ExportClient())
+        os.makedirs(os.path.dirname(os.path.abspath(args.export_workflow)), exist_ok=True)
+        with open(args.export_workflow, "w") as f:
+            json.dump(prompt, f, indent=2, ensure_ascii=False)
+        print(f"      已写入 {args.export_workflow}")
+        print(f"      (API 格式,可用 POST /prompt 提交;素材路径为占位,使用时替换)")
+        return
+
     client = ComfyClient(args.server)
     client.ping()
 
