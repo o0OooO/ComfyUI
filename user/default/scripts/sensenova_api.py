@@ -9,6 +9,7 @@ sensenova_api.py — 通过 ComfyUI HTTP API 驱动 SenseNova U1 完成各类图
   inpaint    蒙版局部重绘           （Imagen 2: inpainting，只改蒙版区，其余保留）
   outpaint   向外扩图               （Imagen 2: outpainting）
   interleave 图文交错生成 + 思维链    （SenseNova 额外能力）
+  compose    多图参考融合(溶图)      （多张角色/道具/场景图 + 提示词 -> 一张融合图）
 
 它在脚本内**程序化构建 ComfyUI API prompt**(不依赖磁盘上的 workflow JSON),
 所以不用为每个场景手动加载不同的 .json —— 场景与参数都由命令行决定。
@@ -34,6 +35,12 @@ sensenova_api.py — 通过 ComfyUI HTTP API 驱动 SenseNova U1 完成各类图
 
   # 图文交错
   python sensenova_api.py interleave --prompt "explain photosynthesis with diagrams" -o out.png
+
+  # 多图融合(溶图):多张参考图 + <image> 占位符按序绑定(最多 6 张)
+  python sensenova_api.py compose \
+      --ref charA.png --ref charB.png --ref prop.png --ref scene.png \
+      --prompt "<image> 和 <image> 拿着 <image>,站在 <image> 的场景里庆祝" \
+      --input-mp 1.0 -o out.png
 """
 from __future__ import annotations
 
@@ -324,9 +331,45 @@ def build_interleave(args, client) -> dict:
     return nodes
 
 
+def build_compose(args, client) -> dict:
+    """多图参考融合(溶图):多张参考图(角色/道具/场景)+ prompt(<image> 占位符按序绑定)
+    -> 一张融合图。走 SenseNovaU1LocalCompose 节点(image + image2~6,最多 6 张)。"""
+    refs = args.ref or ([args.image] if args.image else [])
+    if not refs:
+        sys.exit("[错误] compose 需要至少一个 --ref(或 --image)参考图")
+    if len(refs) > 6:
+        sys.exit(f"[错误] compose 最多 6 张参考图,收到 {len(refs)} 张")
+    placeholders = args.prompt.count("<image>")
+    if placeholders > len(refs):
+        sys.exit(f"[错误] prompt 里有 {placeholders} 个 <image>,但只传了 {len(refs)} 张参考图")
+
+    nodes = {"1": loader_node(args)}
+    # 每张参考图一个 LoadImage,映射到 compose 节点的 image / image2..image6
+    slot_names = ["image", "image2", "image3", "image4", "image5", "image6"]
+    compose_inputs = {
+        "u1_model": ["1", 0], "prompt": args.prompt,
+        "auto_size": args.width == 0 or args.height == 0,
+        "width": args.width or 1024, "height": args.height or 1024,
+        "target_megapixels": args.target_mp, "input_megapixels": args.input_mp,
+        "cfg_scale": args.cfg_scale, "img_cfg_scale": args.img_cfg_scale,
+        "cfg_norm": "none", "timestep_shift": 3.0,
+        "cfg_interval_start": 0.0, "cfg_interval_end": 1.0,
+        "num_steps": args.steps, "seed": args.seed, "think_mode": args.think}
+    for i, rp in enumerate(refs):
+        name = client.upload_image(rp)
+        nid = f"img_{i}"
+        nodes[nid] = {"class_type": "LoadImage", "inputs": {"image": name}}
+        compose_inputs[slot_names[i]] = [nid, 0]
+    nodes["compose"] = {"class_type": "SenseNovaU1LocalCompose", "inputs": compose_inputs}
+    nodes["save"] = {"class_type": "SaveImage", "inputs": {
+        "images": ["compose", 0], "filename_prefix": "SenseNova_compose"}}
+    return nodes
+
+
 BUILDERS = {
     "t2i": build_t2i, "edit": build_edit, "inpaint": build_inpaint,
     "outpaint": build_outpaint, "interleave": build_interleave,
+    "compose": build_compose,
 }
 
 
@@ -337,10 +380,11 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="通过 ComfyUI API 用 SenseNova U1 覆盖 Imagen 2 的图像能力。",
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("task", choices=list(BUILDERS), help="场景:t2i/edit/inpaint/outpaint/interleave")
-    p.add_argument("--prompt", required=True, help="文本指令/描述")
+    p.add_argument("task", choices=list(BUILDERS), help="场景:t2i/edit/inpaint/outpaint/interleave/compose")
+    p.add_argument("--prompt", required=True, help="文本指令/描述。compose 用 <image> 占位符按序绑定每张参考图")
     p.add_argument("-o", "--output", default="sensenova_out.png", help="输出图片路径(默认 sensenova_out.png)")
     p.add_argument("--image", help="输入图片(edit/inpaint/outpaint 必需;interleave 可选)")
+    p.add_argument("--ref", action="append", help="参考图(compose 多图融合,可多次传入,最多 6 张)")
     p.add_argument("--mask", help="inpaint 用的独立灰度蒙版图(白=改,黑=留)。不给则用 --image 的 alpha 通道")
     p.add_argument("--ratio", default="1:1", help="t2i/interleave 输出比例(默认 1:1)")
     p.add_argument("--pad", type=int, default=256, help="outpaint 四周扩展像素(默认 256)")
@@ -349,6 +393,10 @@ def parse_args():
     p.add_argument("--steps", type=int, default=50, help="采样步数(默认 50;快速预览用 2)")
     p.add_argument("--batch", type=int, default=1, help="批量数(仅 t2i/edit,默认 1)")
     p.add_argument("--seed", type=int, default=DEFAULT_SEED, help=f"随机种子(默认 {DEFAULT_SEED})")
+    p.add_argument("--width", type=int, default=0, help="compose 输出宽(0=auto;32 的倍数)")
+    p.add_argument("--height", type=int, default=0, help="compose 输出高(0=auto;32 的倍数)")
+    p.add_argument("--target-mp", type=float, default=1.048576, dest="target_mp", help="compose 输出像素预算 MP(默认 1.0=1024²)")
+    p.add_argument("--input-mp", type=float, default=1.048576, dest="input_mp", help="compose 每张输入图像素上限 MP(默认 1.0;多图易 OOM 时调小)")
     p.add_argument("--cfg-scale", type=float, default=4.0, dest="cfg_scale", help="文本 CFG(默认 4.0)")
     p.add_argument("--img-cfg-scale", type=float, default=1.0, dest="img_cfg_scale", help="图像 CFG(默认 1.0)")
     p.add_argument("--think", action="store_true", help="开启思维链(更慢,适合复杂推理编辑)")
