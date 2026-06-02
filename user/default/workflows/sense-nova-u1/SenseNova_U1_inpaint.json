@@ -1,0 +1,434 @@
+{
+  "id": "sensenova-u1-inpaint",
+  "revision": 0,
+  "last_node_id": 8,
+  "last_link_id": 9,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "SenseNovaU1LocalLoader",
+      "pos": [
+        -1100,
+        -40
+      ],
+      "size": [
+        480,
+        400
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "u1_model",
+          "type": "SENSENOVA_U1_LOCAL_MODEL",
+          "links": [
+            1
+          ]
+        },
+        {
+          "name": "model_info_json",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SenseNovaU1LocalLoader",
+        "title": "1. 加载 SenseNova U1"
+      },
+      "widgets_values": [
+        "sensenova/SenseNova-U1-8B-MoT",
+        "",
+        "cuda",
+        "bfloat16",
+        "auto",
+        "none",
+        "",
+        "full",
+        ""
+      ]
+    },
+    {
+      "id": 2,
+      "type": "LoadImage",
+      "pos": [
+        -1100,
+        420
+      ],
+      "size": [
+        400,
+        580
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2,
+            5
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage",
+        "title": "2. 载入图片 + 涂抹遮罩(右键 Open in MaskEditor)"
+      },
+      "widgets_values": [
+        "1.webp",
+        "image"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "SenseNovaU1LocalImageEdit",
+      "pos": [
+        -560,
+        60
+      ],
+      "size": [
+        520,
+        600
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "u1_model",
+          "type": "SENSENOVA_U1_LOCAL_MODEL",
+          "link": 1
+        },
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            6,
+            9
+          ]
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": []
+        },
+        {
+          "name": "think_text",
+          "type": "STRING",
+          "links": []
+        },
+        {
+          "name": "metadata_json",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SenseNovaU1LocalImageEdit",
+        "title": "3. SenseNova 指令编辑(整图重绘)"
+      },
+      "widgets_values": [
+        "Replace the masked area with a bouquet of red roses, photorealistic, matching lighting.",
+        true,
+        2048,
+        2048,
+        4.194304,
+        4.0,
+        1.0,
+        "none",
+        3.0,
+        0.0,
+        1.0,
+        50,
+        1,
+        42,
+        "fixed",
+        false
+      ]
+    },
+    {
+      "id": 4,
+      "type": "GrowMask",
+      "pos": [
+        -560,
+        700
+      ],
+      "size": [
+        300,
+        110
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            4
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "GrowMask",
+        "title": "4. 扩张遮罩(羽化前预留边)"
+      },
+      "widgets_values": [
+        6,
+        true
+      ]
+    },
+    {
+      "id": 5,
+      "type": "FeatherMask",
+      "pos": [
+        -220,
+        700
+      ],
+      "size": [
+        300,
+        150
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 4
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            7
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FeatherMask",
+        "title": "5. 羽化遮罩(柔和过渡)"
+      },
+      "widgets_values": [
+        24,
+        24,
+        24,
+        24
+      ]
+    },
+    {
+      "id": 6,
+      "type": "ImageCompositeMasked",
+      "pos": [
+        40,
+        60
+      ],
+      "size": [
+        380,
+        240
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "destination",
+          "type": "IMAGE",
+          "link": 5
+        },
+        {
+          "name": "source",
+          "type": "IMAGE",
+          "link": 6
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            8
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageCompositeMasked",
+        "title": "6. 仅把遮罩区贴回原图(保护其余像素)"
+      },
+      "widgets_values": [
+        0,
+        0,
+        true
+      ]
+    },
+    {
+      "id": 7,
+      "type": "SaveImage",
+      "pos": [
+        460,
+        60
+      ],
+      "size": [
+        460,
+        500
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 8
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveImage",
+        "title": "7. 保存"
+      },
+      "widgets_values": [
+        "SenseNova_inpaint"
+      ]
+    },
+    {
+      "id": 8,
+      "type": "PreviewImage",
+      "pos": [
+        460,
+        600
+      ],
+      "size": [
+        460,
+        420
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage",
+        "title": "Edit 原始结果(对比用)"
+      },
+      "widgets_values": []
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      3,
+      0,
+      "SENSENOVA_U1_LOCAL_MODEL"
+    ],
+    [
+      2,
+      2,
+      0,
+      3,
+      1,
+      "IMAGE"
+    ],
+    [
+      3,
+      2,
+      1,
+      4,
+      0,
+      "MASK"
+    ],
+    [
+      4,
+      4,
+      0,
+      5,
+      0,
+      "MASK"
+    ],
+    [
+      5,
+      2,
+      0,
+      6,
+      0,
+      "IMAGE"
+    ],
+    [
+      6,
+      3,
+      0,
+      6,
+      1,
+      "IMAGE"
+    ],
+    [
+      7,
+      5,
+      0,
+      6,
+      2,
+      "MASK"
+    ],
+    [
+      8,
+      6,
+      0,
+      7,
+      0,
+      "IMAGE"
+    ],
+    [
+      9,
+      3,
+      0,
+      8,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {},
+  "version": 0.4
+}

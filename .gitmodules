@@ -1,0 +1,3 @@
+[submodule "custom_nodes/ComfyUI-SenseNova-U1"]
+	path = custom_nodes/ComfyUI-SenseNova-U1
+	url = https://github.com/OpenSenseNova/ComfyUI-SenseNova-U1.git
