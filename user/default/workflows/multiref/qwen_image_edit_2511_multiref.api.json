@@ -1,0 +1,138 @@
+{
+  "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_edit_2511_fp8mixed.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image"
+    }
+  },
+  "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    }
+  },
+  "img0": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "ref_a.png"
+    }
+  },
+  "img1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "ref_b.png"
+    }
+  },
+  "img2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "ref_c.png"
+    }
+  },
+  "pos": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": [
+        "clip",
+        0
+      ],
+      "prompt": "the two characters shaking hands in a bright modern office, photorealistic",
+      "vae": [
+        "vae",
+        0
+      ],
+      "image1": [
+        "img0",
+        0
+      ],
+      "image2": [
+        "img1",
+        0
+      ],
+      "image3": [
+        "img2",
+        0
+      ]
+    }
+  },
+  "neg": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": [
+        "clip",
+        0
+      ],
+      "prompt": "blurry, lowres, watermark, distorted hands",
+      "vae": [
+        "vae",
+        0
+      ]
+    }
+  },
+  "latent": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    }
+  },
+  "ksampler": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "unet",
+        0
+      ],
+      "positive": [
+        "pos",
+        0
+      ],
+      "negative": [
+        "neg",
+        0
+      ],
+      "latent_image": [
+        "latent",
+        0
+      ],
+      "seed": 42,
+      "steps": 30,
+      "cfg": 4.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    }
+  },
+  "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "ksampler",
+        0
+      ],
+      "vae": [
+        "vae",
+        0
+      ]
+    }
+  },
+  "save": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "decode",
+        0
+      ],
+      "filename_prefix": "cmp_qwen2511"
+    }
+  }
+}

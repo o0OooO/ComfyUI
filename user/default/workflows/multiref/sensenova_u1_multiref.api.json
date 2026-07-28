@@ -1,0 +1,80 @@
+{
+  "loader": {
+    "class_type": "SenseNovaU1LocalLoader",
+    "inputs": {
+      "model_path": "sensenova/SenseNova-U1-8B-MoT",
+      "sensenova_u1_src": "",
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "attn_backend": "auto",
+      "device_map": "none",
+      "max_memory": "",
+      "vram_mode": "full",
+      "gguf_checkpoint": ""
+    }
+  },
+  "img0": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "ref_a.png"
+    }
+  },
+  "img1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "ref_b.png"
+    }
+  },
+  "img2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "ref_c.png"
+    }
+  },
+  "compose": {
+    "class_type": "SenseNovaU1LocalCompose",
+    "inputs": {
+      "u1_model": [
+        "loader",
+        0
+      ],
+      "prompt": "<image> 和 <image> 在明亮的现代办公室里握手,写实摄影",
+      "auto_size": false,
+      "width": 1024,
+      "height": 1024,
+      "target_megapixels": 1.048576,
+      "input_megapixels": 1.048576,
+      "cfg_scale": 4.0,
+      "img_cfg_scale": 1.0,
+      "cfg_norm": "none",
+      "timestep_shift": 3.0,
+      "cfg_interval_start": 0.0,
+      "cfg_interval_end": 1.0,
+      "num_steps": 30,
+      "seed": 42,
+      "think_mode": false,
+      "image": [
+        "img0",
+        0
+      ],
+      "image2": [
+        "img1",
+        0
+      ],
+      "image3": [
+        "img2",
+        0
+      ]
+    }
+  },
+  "save": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "compose",
+        0
+      ],
+      "filename_prefix": "cmp_sensenova"
+    }
+  }
+}

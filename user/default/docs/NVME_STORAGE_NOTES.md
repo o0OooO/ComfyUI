@@ -1,6 +1,10 @@
 # 模型权重存储与恢复说明（临时盘方案）
 
 > 记录于 2026-06-02。本机是 EC2 DLAMI 实例,自带一块 419G 本地 NVMe 临时盘。
+>
+> **2026-07-28 补充:新增一块 300G 持久 EBS 盘 `/mnt/models`**,放 Qwen-Image-Edit-2511
+> 与 FLUX.2-dev。它**不是**临时盘 —— stop→start 数据保留,不用重下。
+> 详见下方「持久 EBS 盘」一节。所以现在是**两种盘混用**,恢复时要分别处理。
 
 ## 背景
 
@@ -70,6 +74,52 @@ bash user/default/scripts/restore_audio_comfy_models.sh      # ace + sfx
 
 > 提示:断链检查 `find models/ -xtype l`(列出所有断掉的软链)。
 
+## 持久 EBS 盘 `/mnt/models`（2026-07-28 新增）
+
+临时盘当时已 99% 满(只剩 5.6G),新挂了一块 **300G EBS 卷 `vol-0426c78922b2dcd49`**
+专门放多参考图对比用的两个开源模型:
+
+```
+/mnt/models/                     # ext4, LABEL=comfy_models2
+├── diffusion_models/            #   qwen_image_edit_2511_fp8mixed  20.5G
+│                                #   flux2_dev_fp8mixed             35.5G
+├── text_encoders/               #   qwen_2.5_vl_7b_fp8_scaled       9.4G
+│                                #   mistral_3_small_flux2_fp8      18.0G
+├── vae/                         #   qwen_image_vae / flux2-vae
+└── loras/                       #   Flux2TurboComfyv2(FLUX.2 少步数出图)
+```
+
+已写入 `/etc/fstab`(用 UUID + `nofail`,盘缺失时不会卡住启动):
+
+```
+UUID=eae16a3a-dbe9-48b6-8b32-80ce24d7e686  /mnt/models  ext4  defaults,nofail,discard  0 2
+```
+
+**三块盘的持久性对照** —— 这是最容易踩的坑:
+
+| 挂载点 | 设备 | 类型 | reboot | stop→start |
+| --- | --- | --- | --- | --- |
+| `/` | nvme0n1p1 300G | EBS | 保留 | 保留 |
+| `/opt/dlami/nvme` | nvme1n1 419G | **instance store** | 保留 | **全部清空** |
+| `/mnt/models` | nvme3n1 300G | EBS | 保留 | 保留 |
+
+所以 stop→start 之后是**混合状态**:`/mnt/models` 的软链照常可用,
+而指向 `/opt/dlami/nvme` 的软链(wan / SenseNova / 音频模型)全部断掉。
+ComfyUI 不会因此崩溃 —— `folder_paths.py:371` 对断链只打
+`WARNING path ... doesn't link anywhere, skipping`,那些模型从下拉列表消失而已。
+
+```bash
+# 恢复(按需):
+bash user/default/scripts/restore_multiref_models.sh    # Qwen/FLUX，EBS 上通常只校验，秒过
+bash user/default/scripts/restore_sensenova_models.sh   # 临时盘，要重下 33G/个
+bash user/default/scripts/download_wan22_weights.sh     # 临时盘，重下
+bash user/default/scripts/restore_audio_comfy_models.sh # 临时盘，重下
+```
+
+> ⚠️ 另有一块 200G EBS `vol-0d4175609718cf361`(`nvme2n1`)**未挂载、来历不明** ——
+> 无文件系统签名但全盘写满高熵数据(非 LUKS)。**没有格式化,不要动它**,
+> 除非先确认里面没有需要的东西。
+
 ## 相关脚本
 
 - `scripts/download_wan22_weights.sh` — 下载 Wan2.2 各 task 权重到临时盘 + 建软链
@@ -77,6 +127,9 @@ bash user/default/scripts/restore_audio_comfy_models.sh      # ace + sfx
 - `scripts/restore_audio_comfy_models.sh` — stop→start 后恢复 ACE-Step 1.5(音乐)+ Stable Audio 3 SFX(音效)单文件权重 + 建软链(ComfyUI 原生节点用)
 - `scripts/offload_models_to_nvme.sh` — 把根盘 models 大文件挪到临时盘 + 建软链
 - `scripts/wan22_api.py` — 调用各 task 生视频(见脚本头注释)
+- `scripts/restore_multiref_models.sh` — 校验/恢复 Qwen-Image-Edit-2511 + FLUX.2-dev(持久 EBS 盘,通常秒过)
+- `scripts/multiref_compare.py` — 同组参考图横向对比 Qwen / FLUX.2 / SenseNova 的多参考图生图
+  (工作流 JSON 见 `workflows/multiref/`,说明见该目录 README)
 
 ## 如果想要持久化(不想每次 stop 都重下)
 
