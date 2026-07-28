@@ -45,7 +45,22 @@
 
 ## stop→start 之后怎么恢复
 
-实例重新启动后,临时盘是空的(甚至挂载点可能要重建)。按需重新下载:
+实例重新启动后,临时盘是空的(甚至挂载点可能要重建)。
+
+### 先跑体检脚本(推荐)
+
+不用自己记该查什么 —— 这个脚本把下面所有项检查一遍,
+**直接告诉你缺什么、该跑哪条命令**(只读,不会下载或改动任何东西):
+
+```bash
+bash user/default/scripts/check_env_after_restart.sh
+```
+
+它会检查:两块盘的挂载、自定义节点子模块、Qwen/FLUX 七个权重文件、
+SenseNova 两个模型(按体积判断,避免"剩个空壳目录"被误判为正常)、
+断链软链、ComfyUI 是否在线。全绿就能直接用。
+
+### 手动恢复
 
 ```bash
 cd /home/ubuntu/projects/mead/ComfyUI
@@ -73,6 +88,31 @@ bash user/default/scripts/restore_audio_comfy_models.sh      # ace + sfx
 ```
 
 > 提示:断链检查 `find models/ -xtype l`(列出所有断掉的软链)。
+
+## 自定义节点:SenseNova 是 git 子模块
+
+`custom_nodes/ComfyUI-SenseNova-U1` 是**子模块**,不是普通目录 ——
+`SenseNovaU1LocalLoader` / `LocalT2I` / `LocalCompose` 三个节点全靠它,
+缺了它 SenseNova 的工作流会直接报「节点不存在」。
+
+它在**根盘**,所以 reboot / stop→start 都不会丢,平时不用管。
+但**换机器或重新 clone 仓库时必须**:
+
+```bash
+git clone --recursive <repo>            # clone 时就带上
+git submodule update --init --recursive # 或者事后补
+```
+
+登记信息(`.gitmodules`),父仓库 pin 住具体 commit,该 commit 已推到远端:
+
+```
+url  = git@github.com:o0OooO/ComfyUI-SenseNova-U1.git
+上游 = https://github.com/OpenSenseNova/ComfyUI-SenseNova-U1
+```
+
+> `git status` 里这个子模块常显示 `?`/`M` —— 多数时候只是里面有
+> `__pycache__` 未跟踪,不代表节点本身没提交。用
+> `git submodule status` 看实际 pin 的 commit 更准。
 
 ## 持久 EBS 盘 `/mnt/models`（2026-07-28 新增）
 
@@ -122,6 +162,8 @@ bash user/default/scripts/restore_audio_comfy_models.sh # 临时盘，重下
 
 ## 相关脚本
 
+- `scripts/check_env_after_restart.sh` — **重启后先跑这个**:体检挂载/子模块/各模型权重/断链,
+  并直接输出该执行哪些恢复命令(只读)
 - `scripts/download_wan22_weights.sh` — 下载 Wan2.2 各 task 权重到临时盘 + 建软链
 - `scripts/restore_sensenova_models.sh` — stop→start 后恢复 SenseNova 基座 + Infographic(重建软链 + 重下)
 - `scripts/restore_audio_comfy_models.sh` — stop→start 后恢复 ACE-Step 1.5(音乐)+ Stable Audio 3 SFX(音效)单文件权重 + 建软链(ComfyUI 原生节点用)
