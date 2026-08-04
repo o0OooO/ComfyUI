@@ -87,7 +87,30 @@ else
 fi
 
 echo
-echo "==================== 5. 断链的软链 ===================="
+echo "==================== 5. LTX-2.3 权重(4 个在临时盘,stop 后必丢) ===================="
+# 基座/文本编码器/上采样/蒸馏 LoRA 都在 /opt/dlami/nvme,约 40G,stop→start 全没。
+# Ingredients IC-LoRA 特意放了持久 EBS /mnt/models,正常不会丢。
+miss_ltx=0
+for f in checkpoints/ltx-2.3-22b-dev-fp8.safetensors \
+         text_encoders/gemma_3_12B_it_fp4_mixed.safetensors \
+         latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.1.safetensors \
+         loras/ltx_2.3_22b_distilled_1.1_lora_dynamic_fro09_avg_rank_111_bf16.safetensors; do
+    if [ -f "models/$f" ]; then pass "$f"
+    else fail "$f"; miss_ltx=1; fi
+done
+# IC-LoRA 是 gated 仓库,缺了单独提示(要 token,不是重下就行)
+if [ -f "models/loras/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors" ]; then
+    pass "loras/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors (多参考用)"
+else
+    note "Ingredients IC-LoRA 缺失 —— 多参考生视频跑不了。"
+    note "  它是 HF gated 仓库:先网页点 Agree and Access,再 hf auth login"
+    note "  https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Ingredients"
+    miss_ltx=1
+fi
+[ $miss_ltx -eq 1 ] && TODO+=("bash user/default/scripts/restore_ltx23_models.sh")
+
+echo
+echo "==================== 6. 断链的软链 ===================="
 broken=$(find models/ -xtype l 2>/dev/null)
 if [ -z "$broken" ]; then
     pass "没有断链"
@@ -100,11 +123,12 @@ else
 fi
 
 echo
-echo "==================== 6. ComfyUI 服务 ===================="
+echo "==================== 7. ComfyUI 服务 ===================="
 if curl -s -m 5 http://127.0.0.1:8188/system_stats >/dev/null 2>&1; then
     pass "ComfyUI 在线 (127.0.0.1:8188)"
 else
-    note "ComfyUI 未响应 —— 权重恢复完之后再启动它(启动时才扫描模型列表)"
+    note "ComfyUI 未响应 —— 权重恢复完之后再启动它(启动时才扫描模型列表):"
+    note "  bash user/default/scripts/start_comfy.sh"
 fi
 nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader 2>/dev/null \
     | sed 's/^/  显存: /' || note "nvidia-smi 不可用"
