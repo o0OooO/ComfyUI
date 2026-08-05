@@ -266,15 +266,13 @@ def audio_tensor_to_contiguous_ndarray(waveform: torch.Tensor) -> np.ndarray:
         waveform: a tensor of shape (1, channels, samples) derived from a Comfy `AUDIO` type.
 
     Returns:
-        Contiguous numpy array of the audio waveform. If the audio was batched,
-            the first item is taken.
+        Contiguous numpy array of the audio waveform.
+
+    Raises:
+        ValueError: If the waveform is not shaped (1, channels, samples).
     """
     if waveform.ndim != 3 or waveform.shape[0] != 1:
         raise ValueError("Expected waveform tensor shape (1, channels, samples)")
-
-    # If batch is > 1, take first item
-    if waveform.shape[0] > 1:
-        waveform = waveform[0]
 
     # Prepare for av: remove batch dim, move to CPU, make contiguous, convert to numpy array
     audio_data_np = waveform.squeeze(0).cpu().contiguous().numpy()
@@ -285,20 +283,21 @@ def audio_tensor_to_contiguous_ndarray(waveform: torch.Tensor) -> np.ndarray:
 
 
 def audio_input_to_mp3(audio: Input.Audio) -> BytesIO:
-    waveform = audio["waveform"].cpu()
+    audio_data_np = audio_tensor_to_contiguous_ndarray(audio["waveform"])
+    sample_rate = int(audio["sample_rate"])
 
     output_buffer = BytesIO()
     output_container = av.open(output_buffer, mode="w", format="mp3")
 
-    out_stream = output_container.add_stream("libmp3lame", rate=audio["sample_rate"])
+    out_stream = output_container.add_stream("libmp3lame", rate=sample_rate)
     out_stream.bit_rate = 320000
 
     frame = av.AudioFrame.from_ndarray(
-        waveform.movedim(0, 1).reshape(1, -1).float().numpy(),
-        format="flt",
-        layout="mono" if waveform.shape[0] == 1 else "stereo",
+        audio_data_np,
+        format="fltp",
+        layout="stereo" if audio_data_np.shape[0] > 1 else "mono",
     )
-    frame.sample_rate = audio["sample_rate"]
+    frame.sample_rate = sample_rate
     frame.pts = 0
     output_container.mux(out_stream.encode(frame))
     output_container.mux(out_stream.encode(None))
@@ -448,6 +447,15 @@ def _compute_upscale_dims(src_w: int, src_h: int, total_pixels: int) -> tuple[in
     return new_w, new_h
 
 
+def upscale_image_tensor_to_min_pixels(image: torch.Tensor, total_pixels: int) -> torch.Tensor:
+    samples = image.movedim(-1, 1)
+    dims = _compute_upscale_dims(samples.shape[3], samples.shape[2], int(total_pixels))
+    if dims is None:
+        return image
+    new_w, new_h = dims
+    return common_upscale(samples, new_w, new_h, "lanczos", "disabled").movedim(1, -1)
+
+
 def upscale_video_to_min_pixels(video: Input.Video, min_pixels: int) -> Input.Video:
     """Upscale a video to meet at least ``min_pixels`` (w * h), preserving aspect ratio.
 
@@ -469,6 +477,11 @@ def _apply_video_scale(video: Input.Video, scale_dims: tuple[int, int]) -> Input
     input_container = None
     output_container = None
 
+    # get_stream_source() is untrimmed, so apply the trim window in this same pass.
+    # start_time is normalized (>= 0); duration == 0 means "until the end".
+    start_time, duration = video.get_active_trim_window()
+    trimming = bool(start_time or duration)
+
     try:
         input_source = video.get_stream_source()
         input_container = av.open(input_source, mode="r")
@@ -487,16 +500,45 @@ def _apply_video_scale(video: Input.Video, scale_dims: tuple[int, int]) -> Input
                 audio_stream.layout = stream.layout
                 break
 
+        in_video = input_container.streams.video[0]
+        start_pts = int(start_time / in_video.time_base) if trimming else 0
+        end_pts = int((start_time + duration) / in_video.time_base) if duration else None
+        if start_pts:
+            input_container.seek(start_pts, stream=in_video)
+
+        encoded = 0
         for frame in input_container.decode(video=0):
+            if trimming:
+                if frame.pts is None or frame.pts < start_pts:
+                    continue
+                if end_pts is not None and frame.pts >= end_pts:
+                    break
             frame = frame.reformat(width=out_w, height=out_h, format="yuv420p")
+            # Re-wrap as a fresh frame: dropping irregular source timestamps (VFR/AVI/GIF/...)
+            # lets the encoder assign clean ones and avoids mp4 muxer errors.
+            frame = av.VideoFrame.from_ndarray(frame.to_ndarray(format="yuv420p"), format="yuv420p")
             for packet in video_stream.encode(frame):
                 output_container.mux(packet)
+            encoded += 1
         for packet in video_stream.encode():
             output_container.mux(packet)
+
+        if encoded == 0:
+            raise ValueError(
+                f"resize produced no frames (start_time={start_time}, duration={duration} "
+                "selected nothing from the source)"
+            )
 
         if audio_stream is not None:
             input_container.seek(0)
             for audio_frame in input_container.decode(audio=0):
+                if trimming:
+                    if audio_frame.time is None or audio_frame.time < start_time:
+                        continue
+                    if duration and audio_frame.time > start_time + duration:
+                        break
+                # Carry odd audio time bases the mp4 muxer rejects; reset pts, encoder assigns clean ones (MP3-in-AVI)
+                audio_frame.pts = None
                 for packet in audio_stream.encode(audio_frame):
                     output_container.mux(packet)
             for packet in audio_stream.encode():
