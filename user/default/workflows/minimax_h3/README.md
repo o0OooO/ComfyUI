@@ -73,7 +73,14 @@ hybrid 的联合音频偏小,所以 `decode_audio` 和 `CreateVideo` 之间插�
 | steps | 30 | **20** |
 | SigmaShift | 12.0 / 3.0 | 12.0 / 3.0(不变) |
 
-官方 R2V 模板自带的注释说:参考图很多的 prompt 上 `beta`/`normal` 明显好过 `simple`。
+官方 R2V 模板自带的注释说:参考图很多的 prompt 上 `beta`/`normal` 明显好过 `simple`
+(注释这么写,但它自己的 widget 出厂是 `simple`,得手动改)。
+
+`MiniMaxH3SigmaShift` 在 12.0/3.0 上其实是 **no-op**,加不加一样:
+`supported_models.py` 里 `MiniMaxH3.sampling_settings = {"shift": 12.0}` 已经给了采样器
+同样的 shift,DiT 的 `sigma_shift_video=12.0 / sigma_shift_audio=3.0` 也是同样的默认值
+(`comfy/ldm/minimax/model.py:418`,transformer_options 里没有才回落到它)。
+所以官方 UI 模板完全不放这个节点是对的;`*.api.json` 里放着只是想显式写死,想调才有意义。
 
 ## prompt 必须写成官方六段式
 
@@ -115,6 +122,11 @@ non_diegetic_music:       # 配乐(画外)
 
 ## 用法
 
+**界面上**:ComfyUI 侧边栏 Workflows → `minimax_h3` → **`ref2va_hybrid_ui`** → Run。
+参考图换成自己的就改两个 LoadImage;prompt 改左下那个 `PrimitiveStringMultiline`。
+
+**命令行**:
+
 ```bash
 # 权重(hybrid 已在 /mnt/models,正常不用重下)
 ls -lL models/diffusion_models/minimax_h3_hybrid_fl2va_ref2va_b25-49.safetensors
@@ -142,11 +154,28 @@ ComfyUI 静默漂移。参考图放 `input/`。
 
 ## 文件
 
-| 文件 | 说明 |
-| --- | --- |
-| `ref2va_hybrid.api.json` | **当前在用的**。API 格式,可直接 POST `/prompt`,也能拖进 ComfyUI |
-| `ref2va_official.api.json` | 对比基线,留作复现记录。官方权重已删,要跑得先重下(见下) |
-| `video_minimax_h3_r2v_official.json` | 官方 Comfy-Org R2V 模板(UI 格式)。**装着的 `comfyui_workflow_templates` 包里没有这个模板**,是从 GitHub raw 抓的 |
+都在 `user/default/workflows/minimax_h3/`,ComfyUI 侧边栏 **Workflows** 里会显示成
+一个 `minimax_h3/` 分组,点开即用(不用拖文件)。
+
+| 文件 | 格式 | 说明 |
+| --- | --- | --- |
+| `ref2va_hybrid_ui.json` | **UI** | **界面上用这个**。开箱即用:hybrid 权重 / beta / 1344×768 / +8dB / 六段式 prompt 都已填好,点 Run 就跑 |
+| `ref2va_hybrid.api.json` | API | 脚本/自动化用,直接 POST `/prompt`。就是实测跑出结果的那份 |
+| `ref2va_official.api.json` | API | 对比基线,留作复现记录。官方权重已删,要跑得先重下(见下) |
+| `video_minimax_h3_r2v_official.json` | UI | 官方 Comfy-Org R2V 模板原版,**没动过**,留作对照。**装着的 `comfyui_workflow_templates` 包里没有这个模板**,是从 GitHub raw 抓的 |
+
+`ref2va_hybrid_ui.json` 是从官方模板改的,改了 5 处(模型 / scheduler / 分辨率 /
++8dB / prompt),清单写在图里那个「本机改动」note 上。校验过:link 表完整、widget 取值
+对着实时 `/object_info` 合法,并且**逐个有效值和 `ref2va_hybrid.api.json` 完全一致** ——
+包括穿过 `ResolutionSelector`(0.98MP→1344×768)和 `ComfyMathExpression`(5s→124 帧)算出来的值。
+换句话说界面这份跑出来的就是实测那条。
+
+⚠️ UI 版里 width/height/length/prompt 都是**连线进来的**,直接改
+`MiniMaxH3ReferenceToVideo` 上的 widget **没用**(连线时 widget 值被忽略)。要改:
+
+- prompt → 改左下 `PrimitiveStringMultiline`
+- 分辨率 → 改 `Resolution Selector` 的 megapixels(**0.98** = 1344×768;1.0 会变 1376×768 超上限)
+- 时长 → 改 `PrimitiveFloat`(秒),后面的 `ComfyMathExpression` 自动对齐到 17k+5 网格
 
 `*.api.json` 由 `gen_minimax_h3_ref2va.py` 里的 builder 生成,改参数就重跑脚本,别手改 JSON。
 里面的图片名是 `h3ref_*.png`,拖进 ComfyUI 后按需重新指定 LoadImage。
