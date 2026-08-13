@@ -173,11 +173,16 @@ python user/default/scripts/gen_minimax_h3_ref2va.py --model official --audio-ga
 
 | | 初始化 | 采样 | 端到端 |
 | --- | --- | --- | --- |
-| official | ~6.4 min(冷读 EBS) | 13m06s(39.3 s/step) | **19m30s** |
-| hybrid | ~2.9 min | 13m07s(39.4 s/step) | **16m00s** |
+| official | ~6.4 min | 13m06s(39.3 s/step) | 19m30s |
+| hybrid | ~2.9 min | 13m07s(39.4 s/step) | 16m00s |
+| hybrid(+8dB,最终版) | ~5.7 min | 13m05s(39.0 s/step) | 19m45s |
 
-初始化差的 3.5 分钟是磁盘冷热,不是模型差异 —— 系统内存 61GB 装不下 TE 27GB + DiT 20GB
-两份 page cache,第一次读 19.5GB 新文件要走 EBS。
+**采样恒定 13 分钟(39 s/step),波动全在初始化**,是磁盘冷热不是模型差异:系统内存 61GB
+装不下 TE 27GB + DiT 20GB 两份 page cache,轮换着跑就得回 EBS 重读 19.5GB。所以别拿端到端
+时间比模型。
+
+固定 seed 是确定性的:hybrid 两次跑出来的视频流 md5 完全一致(`658c60f1…`),
++8dB 只动音频轨。
 
 ## 第二个坑:必须先重启 ComfyUI 再跑
 
