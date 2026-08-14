@@ -7,6 +7,20 @@ MiniMax H3 是 omni-modal 生成模型，**视频和 32kHz 立体声音频在同
 - `57500fc5` (2026-08-03) `feat: Support MiniMax-H3 (CORE-375) #15224`
 - `16e3f303` (2026-08-03) H3 VAE 设备 cast 修复
 
+2026-08-14 合的一批 H3 相关上游改动（`19c87937`，跟着 66 个 commit 一起进来）：
+- `2a68ce33` Optimize MiniMax-H3 VAE
+- `62b3c94b` Fix peak memory issue with H3
+- `bf4c9a08` Implement comfy kitchen attention
+- `bdcb886a` Fix sampler issues for audio with minimax, support more samplers
+- `344b4398` Support asym w4a8_int ← w4a8 量化要它
+- `bbda8364` Support int8_convrot VAE
+- `ddbaa875` minimax: early detect qkv vs q,k,v
+- `efd4e951` Minimax Music 3 + CUDA Graphs 核心支持
+- `e01fb4c5` MiniMaxH3AddGuide（任意帧锚定 image/audio guide，ref2va 可用）
+
+配套：`comfy-kitchen` 0.2.26→0.2.31，装在 `sensenova` env（**server 跑的是这个 env，
+不是 `test`**）。
+
 ## 已验证配置
 
 本机 L40S 48GB 跑的是 int8_convrot 量化组合（**不是** 官方模板推荐的 NVFP4）：
@@ -17,6 +31,13 @@ MiniMax H3 是 omni-modal 生成模型，**视频和 32kHz 立体声音频在同
 | text_encoder | `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` | 27 GB |
 | video VAE | `minimax_h3_video_vae_fp16.safetensors` | 5.2 GB |
 | audio VAE | `minimax_h3_audio_vae_fp32.safetensors` | 0.6 GB |
+
+第二套量化：`AX1Y2JP/MiniMax-H3-W4A8-ConvRot` 的 `*_pruned_w4a8_mixed`（transformer
+12.5GB + TE 16.5GB），fl2va / ref2va 都有。取舍见下面的性能表 —— 冷启快、显存省，
+但每步慢 8%。
+
+蒸馏 LoRA：`lightx2v/Minimax-h3-Turbo` 三个 comfyui 版在
+`/mnt/models/loras/minimax_h3_turbo/`。
 
 权重在 `/mnt/models/`（EBS 持久盘），`models/` 下是逐文件软链 —— 见 [[ebs-persistent-model-disk]] 约定。
 
@@ -44,20 +65,76 @@ python main.py --listen 0.0.0.0 --port 8188 --reserve-vram 1.5
 ## 跑一条
 
 ```bash
-python user/default/scripts/gen_minimax_h3_t2va.py
+python user/default/scripts/gen_minimax_h3_t2va.py              # 默认 4 步 turbo
+python user/default/scripts/gen_minimax_h3_t2va.py --8step       # 音频要稳就用这个
+python user/default/scripts/gen_minimax_h3_t2va.py --w4a8        # 换小量化
+python user/default/scripts/gen_minimax_h3_t2va.py --base        # 回到 30 步基线
 ```
 
-## 实测性能（1344×768，124 帧 ≈ 5.2s，30 步）
+`--steps` / `--shift-video` / `--shift-audio` / `--prompt` / `--seed` 可单独覆盖。
 
-- 模型初始化：2m21s
-- 采样：~34s/step
-- **端到端：22m07s**
+## 实测性能（1344×768，124 帧 ≈ 5.2s）
 
-慢的原因：33B dense transformer，且**首个开源版只有 full attention**
-（官方的 sparse attention 未随开源发布，说是后续更新）。
+30 步基线：初始化 2m21s，采样 ~34s/step，**端到端 22m07s**。
 
-输出验证：`1344x768 @ 24fps h264` + `32000Hz stereo aac`，两条流都是 5.167s，
-音频 mean_volume -17.9 dB（有真实内容，非静音）。
+慢的根因：33B dense transformer，且**开源版只有 full attention**（官方 sparse
+attention 到 2026-08-14 仍未随权重发布）。所以提速只能靠砍步数 + 缩权重。
+
+上了 `lightx2v/Minimax-h3-Turbo` 蒸馏 LoRA 之后（`LoraLoaderModelOnly` 直接打在
+量化权重上，日志 `208 patches attached`，走在线重量化，**每步开销几乎为 0**）：
+
+| 配置 | 冷启（起服后第一条） | 热跑 + 新 prompt | s/step |
+|---|---|---|---|
+| 30 步 int8（基线） | 22m07s | — | 34 |
+| **4 步 int8** | 531s / 502s | **179s / 176s** | 32.5–33.9 |
+| **4 步 w4a8** | **394s** | **186s / 169s** | 35.8–36.4 |
+| 8 步 int8 | — | 292s | ~33 |
+| 8 步 w4a8 | — | 324s | ~36 |
+
+读法：
+
+- **冷启 w4a8 快 24%**（394s vs ~516s）—— staged 27.7GB（11956+15711MB）对
+  45.9GB（19995+25882MB），少读一半权重。
+- **热跑两者打平在 ~177s**：w4a8 采样慢的那 12s 正好被它更快的 TE 编码抵掉。
+- **w4a8 每步慢 8%**。sm_89 上原生的是 `int8_tensorwise`，4-bit 权重要解包，
+  省的是内存不是算力。所以 8 步场景 w4a8 反而输 32s。
+- 结论：**一次性 / 冷启用 w4a8，服务常驻批量出片用 int8**。画质同 seed 下等价。
+
+### 计时的坑
+
+同 prompt + 同 seed 会命中 ComfyUI 输出缓存，`Prompt executed in 0.00`、10s 返回，
+把对比全废掉。测性能必须换 `--prompt` 或 `--seed`。另外只改 shift 不改 prompt 时
+文本编码节点仍然命中缓存 —— 那条路省掉的 TE 编码在真实场景是要付的。
+
+### 4 步的音频不可靠
+
+输出流本身都对（`1344x768 @24fps h264` + `32000Hz stereo aac`，两条都 5.167s），
+但 4 步下音频分支没充分展开，安静/细微的音效会塌成近静音：
+
+| 配置 / 内容 | mean | max |
+|---|---|---|
+| 30 步基线（萨克斯） | -17.9 | — |
+| 4 步 int8（萨克斯） | -32.7 | -16.1 |
+| 4 步 int8 + shift_audio=6（萨克斯） | -31.7 | -18.0 |
+| 4 步 w4a8（萨克斯） | -17.0 | -3.8 |
+| 4 步 w4a8（猫呼噜/钟摆/鸟鸣） | **-50.2** | **-33.2** |
+| 4 步 w4a8（铁匠敲击） | -29.1 | -5.0 |
+| **8 步 int8（萨克斯）** | **-19.8** | **-4.6** |
+| **8 步 w4a8（萨克斯）** | **-20.9** | **-4.9** |
+
+- `shift_audio=6` **没用**（-32.7→-31.7，噪声级差别），别浪费时间调它。
+- 跨 prompt 的方差（-17 ~ -50）比 int8/w4a8 之间的差异大，**不要**从单条 prompt
+  推断量化对音频的影响。
+- **8 步是分界线**：两种量化都稳定回到 -20dB 附近。音频重要就用 `--8step`
+  （代价 292–324s），只要画面用 4 步。
+- 8 步那个 LoRA 训练在 544p mixed，但 768p 出来画面反而更干净（散景更好），
+  没有 off-distribution 的可见代价。
+
+### 为什么没上 sage attention
+
+4 步之后采样只占热跑的 ~75%、冷启的 ~27%，attention 优化最多吃采样的 20–30%
+（约 30s）。sensenova env 里 sageattention/flash_attn/xformers 都没装（只有
+triton 3.7），要重编译。性价比不如先砍步数和缩权重，暂时搁置。
 
 ## 关键约束
 
@@ -103,8 +180,13 @@ ComfyUI 内想提质量，务实选择是 g6e.16xlarge（$7.58/h）：单卡仍 
 API 按秒计费：768P **$0.08/s**，2K **$0.13/s**，768P→2K regenerate $0.05/s。
 输入音频免费，图片前 5 张免费之后 $0.04/张。
 
-5 秒 768P 一条 = $0.40。本机 $2.24/h ÷ $0.40 ≈ 一小时机器钱抵 5.6 条；
-而本机 22 分钟才出一条 —— **纯出片成本 API 便宜得多**。
-自建的价值在可微调、无内容审核、无速率限制、离线可控。
+5 秒 768P 一条 = $0.40。
+
+**上 turbo LoRA 之后这笔账反过来了。** 之前 22 分钟一条，$2.24/h 的机器折算
+$0.82/条，比 API 贵一倍；现在热跑 177s 一条 = 20.3 条/h = **$0.11/条**，比 API
+便宜 3.6x。就算用 8 步保音频（292s，12.3 条/h = $0.18/条）也还便宜 2.2x。
+
+前提是**服务常驻、连续出片**。冷启一条要 394–530s，单条折算 $0.25–0.33，
+零散跑就没这个优势了。自建另外的价值仍在可微调、无内容审核、无速率限制、离线可控。
 
 视频资源包（$1000 起）目前不支持 H3，只能 pay-as-you-go。
