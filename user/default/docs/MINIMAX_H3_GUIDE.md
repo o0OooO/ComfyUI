@@ -65,13 +65,16 @@ python main.py --listen 0.0.0.0 --port 8188 --reserve-vram 1.5
 ## 跑一条
 
 ```bash
-python user/default/scripts/gen_minimax_h3_t2va.py              # 默认 4 步 turbo
-python user/default/scripts/gen_minimax_h3_t2va.py --8step       # 音频要稳就用这个
-python user/default/scripts/gen_minimax_h3_t2va.py --w4a8        # 换小量化
-python user/default/scripts/gen_minimax_h3_t2va.py --base        # 回到 30 步基线
+python user/default/scripts/gen_minimax_h3_t2va.py                  # 定稿:8 步 turbo + int8
+python user/default/scripts/gen_minimax_h3_t2va.py --preset 4step   # 预览用,浅景深会塌
+python user/default/scripts/gen_minimax_h3_t2va.py --preset base    # 回到 30 步基线
+python user/default/scripts/gen_minimax_h3_t2va.py --quant w4a8     # 换小量化
+python user/default/scripts/gen_minimax_h3_t2va.py --write-only     # 只重生成工作流 JSON
 ```
 
-`--steps` / `--shift-video` / `--shift-audio` / `--prompt` / `--seed` 可单独覆盖。
+`--steps` / `--shift-video` / `--shift-audio` / `--prompt` / `--prompt-file` / `--seed`
+可单独覆盖。界面上跑用 `user/default/workflows/minimax_h3/t2va_8step_ui.json`
+(侧边栏 Workflows → `minimax_h3`),选型依据和校验方式见那个目录的 README。
 
 ## 实测性能（1344×768，124 帧 ≈ 5.2s）
 
@@ -86,25 +89,53 @@ attention 到 2026-08-14 仍未随权重发布）。所以提速只能靠砍步�
 | 配置 | 冷启（起服后第一条） | 热跑 + 新 prompt | s/step |
 |---|---|---|---|
 | 30 步 int8（基线） | 22m07s | — | 34 |
-| **4 步 int8** | 531s / 502s | **179s / 176s** | 32.5–33.9 |
-| **4 步 w4a8** | **394s** | **186s / 169s** | 35.8–36.4 |
-| 8 步 int8 | — | 292s | ~33 |
+| **8 步 int8 ← 定稿** | — | **292s / 310s / 330s** | ~33 |
 | 8 步 w4a8 | — | 324s | ~36 |
+| 4 步 int8（仅预览） | 531s / 502s | 179s / 176s / 180s | 32.5–33.9 |
+| 4 步 w4a8（仅预览） | **394s** | 186s / 169s | 35.8–36.4 |
 
 读法：
 
+- **定稿是 8 步 int8，292–330s**。选它是因为画质≈30 步基线，见下面那张 lapvar 表；
+  4 步虽然只要 176s 但丢浅景深，不作为出片配置。
 - **冷启 w4a8 快 24%**（394s vs ~516s）—— staged 27.7GB（11956+15711MB）对
   45.9GB（19995+25882MB），少读一半权重。
-- **热跑两者打平在 ~177s**：w4a8 采样慢的那 12s 正好被它更快的 TE 编码抵掉。
+- **热跑 4 步时两者打平在 ~177s**：w4a8 采样慢的那 12s 正好被它更快的 TE 编码抵掉。
 - **w4a8 每步慢 8%**。sm_89 上原生的是 `int8_tensorwise`，4-bit 权重要解包，
   省的是内存不是算力。所以 8 步场景 w4a8 反而输 32s。
-- 结论：**一次性 / 冷启用 w4a8，服务常驻批量出片用 int8**。画质同 seed 下等价。
+- 结论：**一次性 / 冷启用 w4a8，服务常驻批量出片用 int8**。同一 LoRA + 同 seed 下
+  两种量化画质等价（背景 lapvar 31.0 vs 39.3）。
 
 ### 计时的坑
 
 同 prompt + 同 seed 会命中 ComfyUI 输出缓存，`Prompt executed in 0.00`、10s 返回，
 把对比全废掉。测性能必须换 `--prompt` 或 `--seed`。另外只改 shift 不改 prompt 时
 文本编码节点仍然命中缓存 —— 那条路省掉的 TE 编码在真实场景是要付的。
+
+### 4 步 LoRA 会丢浅景深 —— 所以定稿用 8 步
+
+**这是选型的决定性依据**,比耗时重要。在背景那块常年虚焦的区域量 Laplacian 方差
+(越低=虚化越彻底,同 prompt / 同 seed 42):
+
+| 配置 | LoRA | steps | shift_v | 背景 lapvar |
+|---|---|---|---|---|
+| 30 步基线 | 无 | 30 | 12 | **35.0** |
+| **8 步(定稿)** | 8step | 8 | 12 | **31.0** |
+| 8 步 w4a8 | 8step | 8 | 12 | **39.3** |
+| 4 步 | 4step | 4 | 6 | 107.1 |
+| 4 步 + shift 12 | 4step | 4 | 12 | 78.0 |
+| 4 步 LoRA 跑 8 步 | 4step | 8 | 12 | **116.8** |
+
+- **8 步 LoRA ≈ 30 步基线**(31.0 vs 35.0):1327s 压到 292s,散景/皮肤纹理都对得上。
+- **4 步 LoRA 把 prompt 里的 shallow depth of field 丢了**,背景近乎合焦,人脸是过度
+  平滑的塑料感。
+- **这是 LoRA 的属性,不是步数的属性。** 两种救法都失败:shift 6→12 只走 27% 的路
+  (107→78,暗调回来了、散景圆盘没回来);给 4 步 LoRA 喂 8 步**反而最差**(116.8),
+  它被绑死在训练时那个 4 步 schedule 上。**别再调 4 步 LoRA 的 shift 了。**
+- 第二条 prompt(面包房特写)复现:背景带 lapvar 4 步 85.2 / 8 步 **16.0**。
+- 同 seed 下**镜头本身也会变**:改 shift/steps 就改了 sigma schedule,轨迹整个走偏
+  (基线那条人戴帽子、机位更远、霓虹字不同)。所以这几条不能当"同一镜头的画质对比"看,
+  只能比风格倾向和细节水平。
 
 ### 4 步的音频不可靠
 
@@ -122,19 +153,29 @@ attention 到 2026-08-14 仍未随权重发布）。所以提速只能靠砍步�
 | **8 步 int8（萨克斯）** | **-19.8** | **-4.6** |
 | **8 步 w4a8（萨克斯）** | **-20.9** | **-4.9** |
 
+| 4 步 int8（面包房，安静内容） | -43.5 | -20.7 |
+| 8 步 int8（面包房，安静内容） | **-48.5** | **-30.9** |
+
 - `shift_audio=6` **没用**（-32.7→-31.7，噪声级差别），别浪费时间调它。
-- 跨 prompt 的方差（-17 ~ -50）比 int8/w4a8 之间的差异大，**不要**从单条 prompt
-  推断量化对音频的影响。
-- **8 步是分界线**：两种量化都稳定回到 -20dB 附近。音频重要就用 `--8step`
-  （代价 292–324s），只要画面用 4 步。
+- 跨 prompt 的方差（-17 ~ -50）比任何配置差异都大，**不要**从单条 prompt
+  推断量化或 LoRA 对音频的影响。
+- ⚠️ **"8 步是音频的分界线"这个说法已作废。** 在萨克斯那条 prompt 内部它成立
+  （4 步 LoRA 不管给 4 步还是 8 步、shift 6 还是 12，都卡在 -31~-33；8 步 LoRA 和
+  基线在 -18~-21），但换到面包房那条 prompt 上 **8 步反而更小**（-48.5 vs -43.5），
+  没复现。**音频响度目前没有可靠的配置杠杆** —— 安静内容就是会塌，只能改 prompt
+  写法，或者像 ref2va 那样在图里插一个 `AudioAdjustVolume` 补增益。
+- 定稿选 8 步的理由是**画面**（见上面那张 lapvar 表），不是音频。
 - 8 步那个 LoRA 训练在 544p mixed，但 768p 出来画面反而更干净（散景更好），
-  没有 off-distribution 的可见代价。
+  没有 off-distribution 的可见代价 —— 上面那张 lapvar 表证实了这点。
 
 ### 为什么没上 sage attention
 
-4 步之后采样只占热跑的 ~75%、冷启的 ~27%，attention 优化最多吃采样的 20–30%
-（约 30s）。sensenova env 里 sageattention/flash_attn/xformers 都没装（只有
-triton 3.7），要重编译。性价比不如先砍步数和缩权重，暂时搁置。
+当初按 4 步算，采样只占热跑的 ~75%、冷启的 ~27%，attention 优化最多吃采样的
+20–30%（约 30s），所以搁置了。sensenova env 里 sageattention/flash_attn/xformers
+都没装（只有 triton 3.7），要重编译。
+
+⚠️ **定稿改成 8 步之后这个结论该重算**：8×33s = 264s 采样占 292s 热跑的 ~90%，
+attention 优化的上限变成 50–80s（约 20%）。还没测，是目前最值得试的下一步。
 
 ## 关键约束
 
@@ -183,8 +224,9 @@ API 按秒计费：768P **$0.08/s**，2K **$0.13/s**，768P→2K regenerate $0.0
 5 秒 768P 一条 = $0.40。
 
 **上 turbo LoRA 之后这笔账反过来了。** 之前 22 分钟一条，$2.24/h 的机器折算
-$0.82/条，比 API 贵一倍；现在热跑 177s 一条 = 20.3 条/h = **$0.11/条**，比 API
-便宜 3.6x。就算用 8 步保音频（292s，12.3 条/h = $0.18/条）也还便宜 2.2x。
+$0.82/条，比 API 贵一倍；现在按定稿的 8 步算，292s 一条 = 12.3 条/h =
+**$0.18/条**，比 API 便宜 2.2x。（4 步是 177s = $0.11/条、便宜 3.6x，但它丢浅景深，
+只当预览用，不该拿来算出片成本。）
 
 前提是**服务常驻、连续出片**。冷启一条要 394–530s，单条折算 $0.25–0.33，
 零散跑就没这个优势了。自建另外的价值仍在可微调、无内容审核、无速率限制、离线可控。

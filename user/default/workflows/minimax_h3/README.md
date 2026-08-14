@@ -1,11 +1,92 @@
-# MiniMax-H3 多参考生视频(ref2va)
+# MiniMax-H3 工作流(t2va / ref2va)
+
+两条流程,两套 transformer,采样参数**不通用**:
+
+| | t2va(纯文本生视频+音频) | ref2va(多参考) |
+| --- | --- | --- |
+| 节点 | `MiniMaxH3ImageToVideo` | `MiniMaxH3ReferenceToVideo` |
+| 权重 | `minimax_h3_fl2va_pruned_int8_convrot` | `minimax_h3_hybrid_fl2va_ref2va_b25-49` |
+| 界面用 | `t2va_8step_ui.json` | `ref2va_hybrid_ui.json` |
+| 脚本 | `gen_minimax_h3_t2va.py` | `gen_minimax_h3_ref2va.py` |
+
+视频和 32kHz 立体声在同一次前向里联合生成(含对白口型),不是后期配音。
+基础部署见 [../../docs/MINIMAX_H3_GUIDE.md](../../docs/MINIMAX_H3_GUIDE.md)。
+
+---
+
+# t2va:用 8 步蒸馏 LoRA(2026-08-14 定稿)
+
+> 六个配置横向对比(同 prompt / 同 seed 42 / 同 1344×768×124 / euler+simple,
+> 只差 steps、shift、LoRA、量化)。结论:**留 8 步 LoRA + int8**,
+> 端到端 292s,画质≈30 步基线的 1327s。
+
+## 为什么是 8 步而不是 4 步
+
+4 步那个 LoRA **会把 prompt 里的浅景深丢掉**。在背景那块常年虚焦的城市光带上量
+Laplacian 方差(越低=虚化越彻底):
+
+| 配置 | LoRA | steps | shift_v | 背景 lapvar |
+| --- | --- | --- | --- | --- |
+| 30 步基线 | 无 | 30 | 12 | **35.0** |
+| **8 步(定稿)** | 8step | 8 | 12 | **31.0** |
+| 8 步 w4a8 | 8step | 8 | 12 | **39.3** |
+| 4 步 | 4step | 4 | 6 | 107.1 |
+| 4 步 + shift 12 | 4step | 4 | 12 | 78.0 |
+| 4 步 LoRA 跑 8 步 | 4step | 8 | 12 | **116.8** |
+
+**这是 LoRA 的属性,不是步数的属性** —— 两种救法都失败:把 shift 从 6 提到 12 只走了
+27% 的路(107→78,暗调回来了、散景圆盘没回来);给 4 步 LoRA 喂 8 步**反而更差**
+(116.8,全场最烂),它被绑死在训练时那个 4 步 schedule 上。
+
+第二条 prompt(面包房特写,prompt 明写 "very shallow depth of field")复现了同一结论:
+背景带 lapvar 4 步 85.2 / 8 步 **16.0**,4 步那条能看清后厨每个人的帽子。
+画面上还有个副作用:4 步的皮肤是过度平滑的塑料感,8 步和基线是正常纹理。
+
+**8 步 LoRA 基本就是基线的等价物**(31.0 vs 35.0)。所以 4 步只留着看构图/试 prompt。
+
+音频不在这个结论里:同一条 prompt 内 4 步稳定在 −31~−33 dBFS、8 步 −19.8,但换到
+面包房那条 prompt 8 步反而更小(−48.5 vs −43.5)。**跨 prompt 方差压过配置差异,
+别拿音量当选型依据** —— 详见 guide 里那张表。
+
+## 用法
+
+**界面上**:侧边栏 Workflows → `minimax_h3` → **`t2va_8step_ui`** → Run。
+改 prompt 直接改 `MiniMaxH3ImageToVideo` 上那个多行框(t2va 这份没有连线进来的 widget,
+和 ref2va 那份不一样,可以直接改)。
+
+**命令行**:
+
+```bash
+python user/default/scripts/gen_minimax_h3_t2va.py                    # 定稿:8 步 + int8
+python user/default/scripts/gen_minimax_h3_t2va.py --preset 4step     # 预览用,景深会塌
+python user/default/scripts/gen_minimax_h3_t2va.py --preset base      # 30 步基线
+python user/default/scripts/gen_minimax_h3_t2va.py --quant w4a8       # 冷启一次性跑
+python user/default/scripts/gen_minimax_h3_t2va.py --prompt "..." --seed 7
+python user/default/scripts/gen_minimax_h3_t2va.py --write-only       # 只重生成两个 JSON
+```
+
+`--steps` / `--shift-video` / `--shift-audio` 可单独覆盖,用来做 A/B;
+一旦覆盖了就**不会**回写 git 里那两个 JSON(避免把定稿冲掉)。
+
+## 两个 JSON 都是脚本生成的,别手改
+
+`--write-only` 会同时写 `t2va_8step.api.json` 和 `t2va_8step_ui.json`,并做两道校验:
+
+1. 所有节点名/输入名/combo 取值对着实时 `/object_info` 合法(和 ref2va 脚本同一个 `validate()`)
+2. UI 版每个**有效值**逐项等于 api 版(`check_ui_matches_api()`),连 widget 顺序都是从
+   `/object_info` 的声明顺序推出来的,不会和装着的 ComfyUI 漂移
+
+跑过真机验证:直接 POST `t2va_8step.api.json` 出来的帧和当初挑中的那条
+**逐字节相同**,音频也相同(mean −19.8 / peak −4.6 dBFS)。
+
+---
+
+# ref2va:多参考生视频
 
 > 记录于 2026-08-13。同一组参考图 + 同一条 prompt + 同一 seed(42),横向对比官方
 > ref2va checkpoint 和社区 hybrid 合并版,择优保留一个。结论:**留 hybrid**。
 
 跑的是 `MiniMaxH3ReferenceToVideo` 节点:≤9 张图 / ≤3 段视频 / ≤3 段音频,总计 ≤12 个文件。
-视频和 32kHz 立体声在同一次前向里联合生成(含对白口型),不是后期配音。
-基础部署见 [../../docs/MINIMAX_H3_GUIDE.md](../../docs/MINIMAX_H3_GUIDE.md)。
 
 ## 第一个坑:ref2va 是**另一套** transformer
 
@@ -70,7 +151,7 @@ hybrid 的联合音频偏小,所以 `decode_audio` 和 `CreateVideo` 之间插�
 | --- | --- | --- |
 | sampler | `euler` | **`res_multistep`** |
 | scheduler | `simple` | **`beta`** |
-| steps | 30 | **20** |
+| steps | 8(8 步 LoRA) | **20**(未上 turbo) |
 | SigmaShift | 12.0 / 3.0 | 12.0 / 3.0(不变) |
 
 官方 R2V 模板自带的注释说:参考图很多的 prompt 上 `beta`/`normal` 明显好过 `simple`
@@ -159,7 +240,9 @@ ComfyUI 静默漂移。参考图放 `input/`。
 
 | 文件 | 格式 | 说明 |
 | --- | --- | --- |
-| `ref2va_hybrid_ui.json` | **UI** | **界面上用这个**。开箱即用:hybrid 权重 / beta / 1344×768 / +8dB / 六段式 prompt 都已填好,点 Run 就跑 |
+| `t2va_8step_ui.json` | **UI** | **t2va 界面上用这个**。8 步 LoRA / int8 / shift 12-3 / euler+simple / 1344×768×124 都已填好 |
+| `t2va_8step.api.json` | API | t2va 脚本/自动化用。就是实测挑中的那份(逐字节复现过) |
+| `ref2va_hybrid_ui.json` | **UI** | **ref2va 界面上用这个**。开箱即用:hybrid 权重 / beta / 1344×768 / +8dB / 六段式 prompt 都已填好,点 Run 就跑 |
 | `ref2va_hybrid.api.json` | API | 脚本/自动化用,直接 POST `/prompt`。就是实测跑出结果的那份 |
 | `ref2va_official.api.json` | API | 对比基线,留作复现记录。官方权重已删,要跑得先重下(见下) |
 | `video_minimax_h3_r2v_official.json` | UI | 官方 Comfy-Org R2V 模板原版,**没动过**,留作对照。**装着的 `comfyui_workflow_templates` 包里没有这个模板**,是从 GitHub raw 抓的 |
