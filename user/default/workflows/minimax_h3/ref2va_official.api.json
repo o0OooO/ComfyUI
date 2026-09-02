@@ -2,14 +2,14 @@
   "unet": {
     "class_type": "UNETLoader",
     "inputs": {
-      "unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "unet_name": "minimax_h3_ref2va_pruned_w4a8_mixed.safetensors",
       "weight_dtype": "default"
     }
   },
   "clip": {
     "class_type": "CLIPLoader",
     "inputs": {
-      "clip_name": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+      "clip_name": "qwen3vl_32b_minimax_h3_w4a8_mixed.safetensors",
       "type": "minimax"
     }
   },
@@ -163,7 +163,7 @@
       ],
       "fps": 24.0,
       "audio": [
-        "decode_audio",
+        "gain",
         0
       ]
     }
@@ -178,6 +178,16 @@
       "filename_prefix": "video/MiniMax_H3_ref2va_official",
       "format": "auto",
       "codec": "auto"
+    }
+  },
+  "gain": {
+    "class_type": "AudioAdjustVolume",
+    "inputs": {
+      "audio": [
+        "decode_audio",
+        0
+      ],
+      "volume": 8
     }
   },
   "load_0": {
