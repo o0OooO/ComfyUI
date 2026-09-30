@@ -1,0 +1,132 @@
+{
+  "unet": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "wan_animate_2_distill_int8_convrot.safetensors", "weight_dtype": "default" },
+    "_meta": { "title": "Wan-Animate-2 蒸馏版(4 步 LCM),非蒸馏版要另配 lightx2v LoRA" }
+  },
+  "cache": {
+    "class_type": "WanAnimate2Cache",
+    "inputs": { "model": ["unet", 0], "device": "gpu", "dtype": "int8" },
+    "_meta": { "title": "官方模板就是 gpu/int8" }
+  },
+  "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": { "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors", "type": "wan", "device": "default" },
+    "_meta": { "title": "注意:这个 TE 在临时盘 /opt/dlami/nvme,实例 stop 后要重新拉" }
+  },
+  "vae": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "wan_2.1_vae.safetensors" },
+    "_meta": { "title": "等价于官方的 Wan2_1_VAE_bf16,用本地已有的省 250M" }
+  },
+  "cvl": { "class_type": "CLIPVisionLoader", "inputs": { "clip_name": "clip_vision_h.safetensors" } },
+
+  "ref": { "class_type": "LoadImage", "inputs": { "image": "h3ref_girl.png" } },
+  "vid": { "class_type": "LoadVideo", "inputs": { "file": "dance_pose.webm" } },
+  "vcomp": { "class_type": "GetVideoComponents", "inputs": { "video": ["vid", 0] } },
+
+  "pose_rs": {
+    "class_type": "ResizeImageMaskNode",
+    "inputs": {
+      "input": ["vcomp", 0],
+      "resize_type": "scale dimensions",
+      "resize_type.width": 480,
+      "resize_type.height": 832,
+      "resize_type.crop": "center",
+      "scale_method": "area"
+    },
+    "_meta": { "title": "驱动视频缩到 480x832(竖版);输出尺寸由这里决定" }
+  },
+  "psize": { "class_type": "GetImageSize", "inputs": { "image": ["pose_rs", 0] } },
+  "ref_rs": {
+    "class_type": "ResizeImageMaskNode",
+    "inputs": {
+      "input": ["ref", 0],
+      "resize_type": "scale dimensions",
+      "resize_type.width": ["psize", 0],
+      "resize_type.height": ["psize", 1],
+      "resize_type.crop": "center",
+      "scale_method": "area"
+    },
+    "_meta": { "title": "角色参考图必须和驱动视频同尺寸" }
+  },
+
+  "cve_ref": { "class_type": "CLIPVisionEncode", "inputs": { "clip_vision": ["cvl", 0], "image": ["ref_rs", 0], "crop": "none" } },
+  "pose_first": { "class_type": "ImageFromBatch", "inputs": { "image": ["pose_rs", 0], "batch_index": 0, "length": 1 } },
+  "cve_pose": { "class_type": "CLIPVisionEncode", "inputs": { "clip_vision": ["cvl", 0], "image": ["pose_first", 0], "crop": "none" } },
+
+  "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["clip", 0],
+      "text": "Character appearance description: A teenage girl with black hair in a high ponytail and bangs, wearing a long black wool coat over a dark teal sweatshirt, light grey sweatpants and black-and-white canvas sneakers, a black backpack on her shoulders, full body from head to toe.\nBackground description: a dim narrow city street at night, blurred neon and streetlights in the distance, wet asphalt, cinematic night photography."
+    },
+    "_meta": { "title": "官方格式:Character appearance description / Background description 两段" }
+  },
+  "neg": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["clip", 0],
+      "text": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
+    }
+  },
+  "pos_pose": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "clip": ["clip", 0], "text": "一段人物跳舞的动作参考视频" },
+    "_meta": { "title": "这一路描述的是「驱动视频」本身,不是要生成的画面" }
+  },
+
+  "w2v": {
+    "class_type": "WanAnimate2ToVideo",
+    "inputs": {
+      "positive": ["pos", 0],
+      "negative": ["neg", 0],
+      "vae": ["vae", 0],
+      "reference_image": ["ref_rs", 0],
+      "pose_video": ["pose_rs", 0],
+      "clip_vision_output": ["cve_ref", 0],
+      "positive_pose": ["pos_pose", 0],
+      "clip_vision_output_pose": ["cve_pose", 0],
+      "width": ["psize", 0],
+      "height": ["psize", 1],
+      "length": 81,
+      "batch_size": 1,
+      "video_frame_offset": 0,
+      "pose_strength": 1.0,
+      "pose_start_percent": 0.0,
+      "pose_end_percent": 1.0,
+      "reference_image_strength": 1.0
+    },
+    "_meta": { "title": "长视频接续:把上一段的 video_frame_offset(输出 6)和尾帧接回 continue_motion" }
+  },
+
+  "msd": { "class_type": "ModelSamplingSD3", "inputs": { "model": ["cache", 0], "shift": 5.0 } },
+  "sel": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "lcm" } },
+  "sigmas": { "class_type": "BasicScheduler", "inputs": { "model": ["cache", 0], "scheduler": "simple", "steps": 10, "denoise": 1.0 } },
+  "ks": {
+    "class_type": "SamplerCustom",
+    "inputs": {
+      "model": ["msd", 0],
+      "add_noise": true,
+      "noise_seed": 20260930,
+      "cfg": 1.0,
+      "positive": ["w2v", 0],
+      "negative": ["w2v", 1],
+      "sampler": ["sel", 0],
+      "sigmas": ["sigmas", 0],
+      "latent_image": ["w2v", 2]
+    },
+    "_meta": { "title": "蒸馏版:lcm + simple 10 步 + cfg 1.0 + shift 5" }
+  },
+  "trim": { "class_type": "TrimVideoLatent", "inputs": { "samples": ["ks", 0], "trim_amount": ["w2v", 3] } },
+  "decode": { "class_type": "VAEDecode", "inputs": { "samples": ["trim", 0], "vae": ["vae", 0] } },
+  "mkvid": {
+    "class_type": "CreateVideo",
+    "inputs": { "images": ["decode", 0], "fps": ["vcomp", 2], "audio": ["vcomp", 1] },
+    "_meta": { "title": "帧率沿用驱动视频;驱动视频是 60fps 时 81 帧只有 1.35 秒,想要 5 秒先把驱动视频抽到 16fps" }
+  },
+  "save": {
+    "class_type": "SaveVideo",
+    "inputs": { "video": ["mkvid", 0], "filename_prefix": "video/wan_animate2", "format": "auto", "format.codec": "auto" }
+  }
+}
