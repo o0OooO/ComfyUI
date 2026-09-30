@@ -1,0 +1,59 @@
+{
+  "unet": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "qwen_image_2.1_int8_convrot.safetensors", "weight_dtype": "default" },
+    "_meta": { "title": "Qwen-Image-2.1 DiT (int8_convrot)" }
+  },
+  "cache": {
+    "class_type": "QwenImage21Cache",
+    "inputs": { "model": ["unet", 0], "device": "auto", "dtype": "default" },
+    "_meta": { "title": "prefix KV cache (2.1 专用,省重复前缀算力)" }
+  },
+  "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": { "clip_name": "qwen3vl_8b_int8_convrot.safetensors", "type": "qwen_image", "device": "default" },
+    "_meta": { "title": "Qwen3-VL-8B text encoder" }
+  },
+  "vae": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "qwen_image_2.1_vae_bf16.safetensors" },
+    "_meta": { "title": "Qwen-Image-2.1 VAE" }
+  },
+  "enc": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": ["clip", 0],
+      "vae": ["vae", 0],
+      "prompt": "一家中式书店的橱窗特写,玻璃上用金色衬线体写着「长安书局」四个大字,下面一行小字「新书到店 · 每日营业」。窗内暖黄灯光,木质书架虚焦,窗外傍晚蓝调天光,雨后地面反光。真实摄影质感,浅景深,50mm 镜头。",
+      "negative_prompt": "",
+      "resolution": 1024
+    },
+    "_meta": { "title": "TextEncodeQwenImage21(resolution=总像素预算,不是宽高)" }
+  },
+  "latent": {
+    "class_type": "EmptyLatentImage",
+    "inputs": { "width": 1024, "height": 1024, "batch_size": 1 },
+    "_meta": { "title": "画布(通道数由 fix_empty_latent_channels 自动补到 64)" }
+  },
+  "ks": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["cache", 0],
+      "positive": ["enc", 0],
+      "negative": ["enc", 1],
+      "latent_image": ["latent", 0],
+      "seed": 20260930,
+      "steps": 25,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1
+    },
+    "_meta": { "title": "KSampler(官方模板 25 步 / cfg=1;官方 pipeline 用 40-50 步)" }
+  },
+  "decode": { "class_type": "VAEDecode", "inputs": { "samples": ["ks", 0], "vae": ["vae", 0] } },
+  "save": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["decode", 0], "filename_prefix": "qwen2.1_t2i" }
+  }
+}

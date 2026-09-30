@@ -1,0 +1,62 @@
+{
+  "unet": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "qwen_image_2.1_int8_convrot.safetensors", "weight_dtype": "default" },
+    "_meta": { "title": "Qwen-Image-2.1 DiT (int8_convrot)" }
+  },
+  "cache": {
+    "class_type": "QwenImage21Cache",
+    "inputs": { "model": ["unet", 0], "device": "auto", "dtype": "default" }
+  },
+  "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": { "clip_name": "qwen3vl_8b_int8_convrot.safetensors", "type": "qwen_image", "device": "default" }
+  },
+  "vae": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "qwen_image_2.1_vae_bf16.safetensors" }
+  },
+  "img1": { "class_type": "LoadImage", "inputs": { "image": "sancai_glaze_bowl.jpg" } },
+  "img2": { "class_type": "LoadImage", "inputs": { "image": "sancai_tang_horse.jpg" } },
+  "img3": { "class_type": "LoadImage", "inputs": { "image": "wild_goose_pagoda.jpg" } },
+  "enc": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": ["clip", 0],
+      "vae": ["vae", 0],
+      "images.image_1": ["img1", 0],
+      "images.image_2": ["img2", 0],
+      "images.image_3": ["img3", 0],
+      "prompt": "A large decorative numeral digit '3' as the single central subject, filling the frame. The numeral's body is sculpted from Tang dynasty sancai tricolour glazed ceramic, with the flowing amber-brown, jade-green and cream drip glaze and crackled glossy surface taken from <image1>. Along the curves of the numeral, relief carvings of the Tang sancai horse and rider from <image2> emerge from the ceramic. Behind the numeral, the silhouette of the Giant Wild Goose Pagoda from <image3> is rendered in low relief. Elegant Chinese Tang dynasty aesthetic, museum studio lighting, clean warm beige background, highly detailed product render of a single numeral 3.",
+      "negative_prompt": "",
+      "resolution": 1024
+    },
+    "_meta": { "title": "多参考(最多 image_1..image_10,提示词里用 <imageN> 点名)" }
+  },
+  "latent": {
+    "class_type": "EmptyLatentImage",
+    "inputs": { "width": 1024, "height": 1024, "batch_size": 1 },
+    "_meta": { "title": "固定 1024²:和 cmp_xian3 那组横评同画布。去掉这个节点改接 enc 的 latent 输出则跟随 image_1" }
+  },
+  "ks": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["cache", 0],
+      "positive": ["enc", 0],
+      "negative": ["enc", 1],
+      "latent_image": ["latent", 0],
+      "seed": 20260728,
+      "steps": 30,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1
+    },
+    "_meta": { "title": "seed/steps 抄 cmp_xian3/compare_meta.json,便于和 2511 直接对比" }
+  },
+  "decode": { "class_type": "VAEDecode", "inputs": { "samples": ["ks", 0], "vae": ["vae", 0] } },
+  "save": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["decode", 0], "filename_prefix": "cmp_qwen2.1" }
+  }
+}
