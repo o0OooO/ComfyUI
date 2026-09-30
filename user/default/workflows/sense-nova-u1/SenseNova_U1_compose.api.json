@@ -1,0 +1,49 @@
+{
+  "1": {
+    "class_type": "SenseNovaU1LocalLoader",
+    "inputs": {
+      "model_path": "sensenova/SenseNova-U1-8B-MoT",
+      "sensenova_u1_src": "",
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "attn_backend": "auto",
+      "device_map": "none",
+      "max_memory": "",
+      "vram_mode": "full",
+      "gguf_checkpoint": ""
+    }
+  },
+  "2": { "class_type": "LoadImage", "inputs": { "image": "CHARACTER_A.png" } },
+  "3": { "class_type": "LoadImage", "inputs": { "image": "CHARACTER_B.png" } },
+  "4": { "class_type": "LoadImage", "inputs": { "image": "PROP.png" } },
+  "5": { "class_type": "LoadImage", "inputs": { "image": "SCENE.png" } },
+  "6": {
+    "class_type": "SenseNovaU1LocalCompose",
+    "inputs": {
+      "u1_model": ["1", 0],
+      "image": ["2", 0],
+      "image2": ["3", 0],
+      "image3": ["4", 0],
+      "image4": ["5", 0],
+      "prompt": "<image> 和 <image> 两人一起举着 <image>,站在 <image> 的场景中欢笑",
+      "auto_size": false,
+      "width": 1024,
+      "height": 1024,
+      "target_megapixels": 1.048576,
+      "input_megapixels": 1.048576,
+      "cfg_scale": 4.0,
+      "img_cfg_scale": 1.0,
+      "cfg_norm": "none",
+      "timestep_shift": 3.0,
+      "cfg_interval_start": 0.0,
+      "cfg_interval_end": 1.0,
+      "num_steps": 50,
+      "seed": 42,
+      "think_mode": false
+    }
+  },
+  "7": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["6", 0], "filename_prefix": "SenseNova_compose" }
+  }
+}

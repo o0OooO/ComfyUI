@@ -1,0 +1,2011 @@
+{
+  "id": "ltx23-multiref-ingredients",
+  "revision": 0,
+  "last_node_id": 101,
+  "last_link_id": 45,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "LoadImage",
+      "pos": [
+        -1900,
+        -600
+      ],
+      "size": [
+        300,
+        340
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            1
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "example.png",
+        "image"
+      ],
+      "title": "参考 1: 主角 A / Character A"
+    },
+    {
+      "id": 11,
+      "type": "ResizeAndPadImage",
+      "pos": [
+        -1540,
+        -600
+      ],
+      "size": [
+        300,
+        130
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            5
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ResizeAndPadImage"
+      },
+      "widgets_values": [
+        384,
+        224,
+        "black",
+        "lanczos"
+      ],
+      "title": "格子 1 -> 384x224"
+    },
+    {
+      "id": 2,
+      "type": "LoadImage",
+      "pos": [
+        -1900,
+        -200
+      ],
+      "size": [
+        300,
+        340
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "example.png",
+        "image"
+      ],
+      "title": "参考 2: 主角 B / Character B"
+    },
+    {
+      "id": 12,
+      "type": "ResizeAndPadImage",
+      "pos": [
+        -1540,
+        -200
+      ],
+      "size": [
+        300,
+        130
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            6
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ResizeAndPadImage"
+      },
+      "widgets_values": [
+        384,
+        224,
+        "black",
+        "lanczos"
+      ],
+      "title": "格子 2 -> 384x224"
+    },
+    {
+      "id": 3,
+      "type": "LoadImage",
+      "pos": [
+        -1900,
+        200
+      ],
+      "size": [
+        300,
+        340
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            3
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "example.png",
+        "image"
+      ],
+      "title": "参考 3: 关键道具 / Key prop"
+    },
+    {
+      "id": 13,
+      "type": "ResizeAndPadImage",
+      "pos": [
+        -1540,
+        200
+      ],
+      "size": [
+        300,
+        130
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            7
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ResizeAndPadImage"
+      },
+      "widgets_values": [
+        384,
+        224,
+        "black",
+        "lanczos"
+      ],
+      "title": "格子 3 -> 384x224"
+    },
+    {
+      "id": 4,
+      "type": "LoadImage",
+      "pos": [
+        -1900,
+        600
+      ],
+      "size": [
+        300,
+        340
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            4
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "example.png",
+        "image"
+      ],
+      "title": "参考 4: 场景 / Location"
+    },
+    {
+      "id": 14,
+      "type": "ResizeAndPadImage",
+      "pos": [
+        -1540,
+        600
+      ],
+      "size": [
+        300,
+        130
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 4
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            8
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ResizeAndPadImage"
+      },
+      "widgets_values": [
+        384,
+        224,
+        "black",
+        "lanczos"
+      ],
+      "title": "格子 4 -> 384x224"
+    },
+    {
+      "id": 21,
+      "type": "ImageStitch",
+      "pos": [
+        -1180,
+        -560
+      ],
+      "size": [
+        280,
+        130
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image1",
+          "type": "IMAGE",
+          "link": 5
+        },
+        {
+          "name": "image2",
+          "type": "IMAGE",
+          "link": 6
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            9
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageStitch"
+      },
+      "widgets_values": [
+        "right",
+        true,
+        0,
+        "black"
+      ],
+      "title": "上排: A | B"
+    },
+    {
+      "id": 22,
+      "type": "ImageStitch",
+      "pos": [
+        -1180,
+        240
+      ],
+      "size": [
+        280,
+        130
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image1",
+          "type": "IMAGE",
+          "link": 7
+        },
+        {
+          "name": "image2",
+          "type": "IMAGE",
+          "link": 8
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            10
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageStitch"
+      },
+      "widgets_values": [
+        "right",
+        true,
+        0,
+        "black"
+      ],
+      "title": "下排: 道具 | 场景"
+    },
+    {
+      "id": 23,
+      "type": "ImageStitch",
+      "pos": [
+        -850,
+        -160
+      ],
+      "size": [
+        280,
+        130
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image1",
+          "type": "IMAGE",
+          "link": 9
+        },
+        {
+          "name": "image2",
+          "type": "IMAGE",
+          "link": 10
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            11,
+            12
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageStitch"
+      },
+      "widgets_values": [
+        "down",
+        true,
+        0,
+        "black"
+      ],
+      "title": "拼成图册 768x448"
+    },
+    {
+      "id": 24,
+      "type": "PreviewImage",
+      "pos": [
+        -850,
+        60
+      ],
+      "size": [
+        300,
+        330
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 11
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": [],
+      "title": "图册预览"
+    },
+    {
+      "id": 30,
+      "type": "RepeatImageBatch",
+      "pos": [
+        -850,
+        440
+      ],
+      "size": [
+        300,
+        90
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            23
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RepeatImageBatch"
+      },
+      "widgets_values": [
+        121
+      ],
+      "title": "图册 -> 121 帧静态视频"
+    },
+    {
+      "id": 40,
+      "type": "CheckpointLoaderSimple",
+      "pos": [
+        -500,
+        -600
+      ],
+      "size": [
+        380,
+        110
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            13
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [],
+          "slot_index": 1
+        },
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            21,
+            40
+          ],
+          "slot_index": 2
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CheckpointLoaderSimple"
+      },
+      "widgets_values": [
+        "ltx-2.3-22b-dev-fp8.safetensors"
+      ]
+    },
+    {
+      "id": 41,
+      "type": "LTXAVTextEncoderLoader",
+      "pos": [
+        -500,
+        -450
+      ],
+      "size": [
+        380,
+        130
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            15,
+            16
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LTXAVTextEncoderLoader"
+      },
+      "widgets_values": [
+        "gemma_3_12B_it_fp4_mixed.safetensors",
+        "ltx-2.3-22b-dev-fp8.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 42,
+      "type": "LTXVAudioVAELoader",
+      "pos": [
+        -500,
+        -270
+      ],
+      "size": [
+        380,
+        80
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "Audio VAE",
+          "type": "VAE",
+          "links": [
+            24,
+            42
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LTXVAudioVAELoader"
+      },
+      "widgets_values": [
+        "ltx-2.3-22b-dev-fp8.safetensors"
+      ]
+    },
+    {
+      "id": 43,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        -500,
+        -150
+      ],
+      "size": [
+        380,
+        110
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 13
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            14
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "ltx_2.3_22b_distilled_1.1_lora_dynamic_fro09_avg_rank_111_bf16.safetensors",
+        0.5
+      ],
+      "title": "蒸馏 LoRA (8步档; 高质量档请旁路)"
+    },
+    {
+      "id": 44,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        -500,
+        20
+      ],
+      "size": [
+        380,
+        110
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 14
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            27
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors",
+        1.0
+      ],
+      "title": "Ingredients IC-LoRA (1.0~1.4)"
+    },
+    {
+      "id": 50,
+      "type": "CLIPTextEncode",
+      "pos": [
+        -90,
+        -600
+      ],
+      "size": [
+        520,
+        420
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 15
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            17
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "### Reference Sheet Description\n**Top Row Left (Character):** <describe protagonist A - face close-up plus body turnaround: hair, eyes, skin tone, full outfit with colours and materials.>\n**Top Row Right (Character):** <describe protagonist B the same way, or a second view of A.>\n**Bottom Row Left (Prop):** <describe the key prop as a product-style render, multiple angles.>\n**Bottom Row Right (Setting):** <describe the location: architecture, lighting, background depth.>\n\n### Target Description\n<Describe the shot you want. Name every element exactly as described above so the model\nbinds them to the sheet. Cover, in order: shot size and camera move, who is present and\nwhat they wear, the action beat by beat, spoken dialogue in quotes, then lighting and\nambient audio.>"
+      ],
+      "title": "正向: 两段式提示词"
+    },
+    {
+      "id": 51,
+      "type": "CLIPTextEncode",
+      "pos": [
+        -90,
+        -150
+      ],
+      "size": [
+        520,
+        110
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 16
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            18
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "worst quality, inconsistent motion, blurry, jittery, distorted"
+      ],
+      "title": "负向"
+    },
+    {
+      "id": 52,
+      "type": "LTXVConditioning",
+      "pos": [
+        -90,
+        10
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 17
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 18
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            19
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "links": [
+            20
+          ],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LTXVConditioning"
+      },
+      "widgets_values": [
+        24
+      ]
+    },
+    {
+      "id": 60,
+      "type": "EmptyLTXVLatentVideo",
+      "pos": [
+        -90,
+        170
+      ],
+      "size": [
+        300,
+        140
+      ],
+      "flags": {},
+      "order": 21,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            22
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptyLTXVLatentVideo"
+      },
+      "widgets_values": [
+        768,
+        448,
+        121,
+        1
+      ]
+    },
+    {
+      "id": 61,
+      "type": "LTXVAddGuide",
+      "pos": [
+        280,
+        170
+      ],
+      "size": [
+        330,
+        180
+      ],
+      "flags": {},
+      "order": 22,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 19
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 20
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 21
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": 22
+        },
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 23
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            28,
+            36
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "links": [
+            29,
+            37
+          ],
+          "slot_index": 1
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            25
+          ],
+          "slot_index": 2
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LTXVAddGuide"
+      },
+      "widgets_values": [
+        0,
+        1.0
+      ],
+      "title": "参考图册作为 in-context 引导"
+    },
+    {
+      "id": 62,
+      "type": "LTXVEmptyLatentAudio",
+      "pos": [
+        280,
+        400
+      ],
+      "size": [
+        300,
+        110
+      ],
+      "flags": {},
+      "order": 23,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio_vae",
+          "type": "VAE",
+          "link": 24
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Latent",
+          "type": "LATENT",
+          "links": [
+            26
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LTXVEmptyLatentAudio"
+      },
+      "widgets_values": [
+        121,
+        24,
+        1
+      ]
+    },
+    {
+      "id": 63,
+      "type": "LTXVConcatAVLatent",
+      "pos": [
+        650,
+        300
+      ],
+      "size": [
+        280,
+        70
+      ],
+      "flags": {},
+      "order": 24,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video_latent",
+          "type": "LATENT",
+          "link": 25
+        },
+        {
+          "name": "audio_latent",
+          "type": "LATENT",
+          "link": 26
+        }
+      ],
+      "outputs": [
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            34
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LTXVConcatAVLatent"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 70,
+      "type": "RandomNoise",
+      "pos": [
+        650,
+        -600
+      ],
+      "size": [
+        280,
+        100
+      ],
+      "flags": {},
+      "order": 25,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "NOISE",
+          "type": "NOISE",
+          "links": [
+            30
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RandomNoise"
+      },
+      "widgets_values": [
+        42,
+        "randomize"
+      ]
+    },
+    {
+      "id": 71,
+      "type": "KSamplerSelect",
+      "pos": [
+        650,
+        -470
+      ],
+      "size": [
+        280,
+        80
+      ],
+      "flags": {},
+      "order": 26,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "SAMPLER",
+          "type": "SAMPLER",
+          "links": [
+            32
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSamplerSelect"
+      },
+      "widgets_values": [
+        "euler_ancestral_cfg_pp"
+      ]
+    },
+    {
+      "id": 72,
+      "type": "ManualSigmas",
+      "pos": [
+        650,
+        -350
+      ],
+      "size": [
+        280,
+        110
+      ],
+      "flags": {},
+      "order": 27,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "SIGMAS",
+          "type": "SIGMAS",
+          "links": [
+            33
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ManualSigmas"
+      },
+      "widgets_values": [
+        "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+      ],
+      "title": "8 步蒸馏 sigmas"
+    },
+    {
+      "id": 73,
+      "type": "CFGGuider",
+      "pos": [
+        650,
+        -190
+      ],
+      "size": [
+        280,
+        120
+      ],
+      "flags": {},
+      "order": 28,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 27
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 28
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 29
+        }
+      ],
+      "outputs": [
+        {
+          "name": "GUIDER",
+          "type": "GUIDER",
+          "links": [
+            31
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CFGGuider"
+      },
+      "widgets_values": [
+        1
+      ],
+      "title": "cfg=1 (蒸馏档)"
+    },
+    {
+      "id": 74,
+      "type": "SamplerCustomAdvanced",
+      "pos": [
+        990,
+        -190
+      ],
+      "size": [
+        280,
+        130
+      ],
+      "flags": {},
+      "order": 29,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "noise",
+          "type": "NOISE",
+          "link": 30
+        },
+        {
+          "name": "guider",
+          "type": "GUIDER",
+          "link": 31
+        },
+        {
+          "name": "sampler",
+          "type": "SAMPLER",
+          "link": 32
+        },
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 33
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 34
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "LATENT",
+          "links": [
+            35
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "denoised_output",
+          "type": "LATENT",
+          "links": [],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SamplerCustomAdvanced"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 80,
+      "type": "LTXVSeparateAVLatent",
+      "pos": [
+        1320,
+        -190
+      ],
+      "size": [
+        280,
+        80
+      ],
+      "flags": {},
+      "order": 30,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "av_latent",
+          "type": "LATENT",
+          "link": 35
+        }
+      ],
+      "outputs": [
+        {
+          "name": "video_latent",
+          "type": "LATENT",
+          "links": [
+            38
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "audio_latent",
+          "type": "LATENT",
+          "links": [
+            41
+          ],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LTXVSeparateAVLatent"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 81,
+      "type": "LTXVCropGuides",
+      "pos": [
+        1320,
+        -60
+      ],
+      "size": [
+        280,
+        110
+      ],
+      "flags": {},
+      "order": 31,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 36
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 37
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": 38
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [],
+          "slot_index": 0
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "links": [],
+          "slot_index": 1
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            39
+          ],
+          "slot_index": 2
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LTXVCropGuides"
+      },
+      "widgets_values": [],
+      "title": "剥掉参考 token"
+    },
+    {
+      "id": 82,
+      "type": "VAEDecodeTiled",
+      "pos": [
+        1650,
+        -190
+      ],
+      "size": [
+        280,
+        160
+      ],
+      "flags": {},
+      "order": 32,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 39
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 40
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            43
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecodeTiled"
+      },
+      "widgets_values": [
+        768,
+        64,
+        4096,
+        4
+      ]
+    },
+    {
+      "id": 83,
+      "type": "LTXVAudioVAEDecode",
+      "pos": [
+        1650,
+        40
+      ],
+      "size": [
+        280,
+        80
+      ],
+      "flags": {},
+      "order": 33,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 41
+        },
+        {
+          "name": "audio_vae",
+          "type": "VAE",
+          "link": 42
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Audio",
+          "type": "AUDIO",
+          "links": [
+            44
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LTXVAudioVAEDecode"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 84,
+      "type": "CreateVideo",
+      "pos": [
+        1980,
+        -190
+      ],
+      "size": [
+        280,
+        100
+      ],
+      "flags": {},
+      "order": 34,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 43
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 44
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            45
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        24
+      ]
+    },
+    {
+      "id": 85,
+      "type": "SaveVideo",
+      "pos": [
+        1980,
+        -20
+      ],
+      "size": [
+        380,
+        400
+      ],
+      "flags": {},
+      "order": 35,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 45
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "video/LTX23_multiref",
+        "auto",
+        "auto"
+      ]
+    },
+    {
+      "id": 100,
+      "type": "MarkdownNote",
+      "pos": [
+        -2350,
+        -600
+      ],
+      "size": [
+        420,
+        1250
+      ],
+      "flags": {},
+      "order": 36,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "MarkdownNote"
+      },
+      "widgets_values": [
+        "# LTX-2.3 多参考图生视频 (Ingredients IC-LoRA)\n\n## 原理\nLTX-2.3 的多参考**不是**喂多张独立图片,而是把所有主角/道具/场景拼成**一张 reference sheet**\n(参考图册),再把这张图 loop 成一段静态视频当 in-context 条件。左边 4 个 `Load Image`\n会自动拼成 2x2 的 768x448 图册。\n\n## 用前必做\n1. 下载 IC-LoRA (**需要先在 HF 页面点同意授权**):\n   https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Ingredients\n   放到 `models/loras/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors`\n2. 4 张参考图分别放:主角A / 主角B / 关键道具 / 场景。\n   - 参考图最好**黑底、无文字**,主体占满画面。\n   - 只有 2-3 张参考时:把用不到的那路 `Image Stitch` 用 Ctrl+B 旁路掉。\n\n## 提示词写法(很关键)\n必须用两段式结构,和训练时一致:\n- `### Reference Sheet Description` — 逐格描述图册里有什么(外观)\n- `### Target Description` — 描述要生成的动作/镜头(叙事)\n\n图册决定\"长什么样\",Target 决定\"发生什么\"。Target 里要**用图册里同样的措辞**重复\n一遍角色和道具,模型才会把它们绑定到参考上。\n\n## 效果调优\n| 症状 | 处理 |\n|---|---|\n| 角色脸/衣服漂移 | 该角色的格子给正脸特写+转身图,别塞太满;IC-LoRA 强度提到 1.2-1.4 |\n| 某个道具没出现 | 图册里必须有独立一格,并且在 `Reference sheet` 段落里写出来 |\n| 参考跟得太死、不动 | `LTXVAddGuide` 的 strength 降到 0.8-0.9 |\n| 想更高保真 | 参考格子给大一点(重要元素占的面积越大,还原越好) |\n\n## 分辨率与长度\n768x448 / 121 帧 / 24fps 是官方训练 bucket,**效果最好,别乱改**。\n宽高需能被 64 整除,帧数需为 8n+1。参考视频帧数必须 >= 121。\n\n改分辨率时要同步改 4 处:`Empty LTXV Latent Video`、`Repeat Image Batch` 的 amount、\n`LTXV Empty Latent Audio` 的 frames_number、以及 4 个 `Resize and Pad Image` 的尺寸\n(各为总尺寸的一半)。\n\n## 当前是蒸馏 8 步档 (快)\n`ManualSigmas` 8 步 + cfg=1 + distilled LoRA 0.5。\n想要**更高质量**:把 distilled LoRA 旁路(Ctrl+B),`CFGGuider` 的 cfg 改 4.0,\n`ManualSigmas` 换成 30 步线性,例如:\n`1.0, 0.966, 0.933, 0.9, 0.866, 0.833, 0.8, 0.766, 0.733, 0.7, 0.666, 0.633, 0.6, 0.566, 0.533, 0.5, 0.466, 0.433, 0.4, 0.366, 0.333, 0.3, 0.266, 0.233, 0.2, 0.166, 0.133, 0.1, 0.066, 0.033, 0.0`\n\n## 显存\n22B fp8 + 双 LoRA + 参考 token 翻倍,768x448x121 在 46GB L40S 上跑得动,\n但要先确保 GPU 是空的。"
+      ],
+      "title": "使用说明"
+    },
+    {
+      "id": 101,
+      "type": "MarkdownNote",
+      "pos": [
+        -850,
+        830
+      ],
+      "size": [
+        300,
+        340
+      ],
+      "flags": {},
+      "order": 37,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "MarkdownNote"
+      },
+      "widgets_values": [
+        "### 参考图册 (2x2)\n拼好的图册会在这里预览。\n先跑一次确认拼图正确、主体没被裁掉,再去调提示词。\n\n布局:\n```\n+-----------+-----------+\n| 主角 A    | 主角 B    |\n+-----------+-----------+\n| 关键道具  | 场景      |\n+-----------+-----------+\n```"
+      ],
+      "title": "图册布局"
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      11,
+      0,
+      "IMAGE"
+    ],
+    [
+      2,
+      2,
+      0,
+      12,
+      0,
+      "IMAGE"
+    ],
+    [
+      3,
+      3,
+      0,
+      13,
+      0,
+      "IMAGE"
+    ],
+    [
+      4,
+      4,
+      0,
+      14,
+      0,
+      "IMAGE"
+    ],
+    [
+      5,
+      11,
+      0,
+      21,
+      0,
+      "IMAGE"
+    ],
+    [
+      6,
+      12,
+      0,
+      21,
+      1,
+      "IMAGE"
+    ],
+    [
+      7,
+      13,
+      0,
+      22,
+      0,
+      "IMAGE"
+    ],
+    [
+      8,
+      14,
+      0,
+      22,
+      1,
+      "IMAGE"
+    ],
+    [
+      9,
+      21,
+      0,
+      23,
+      0,
+      "IMAGE"
+    ],
+    [
+      10,
+      22,
+      0,
+      23,
+      1,
+      "IMAGE"
+    ],
+    [
+      11,
+      23,
+      0,
+      24,
+      0,
+      "IMAGE"
+    ],
+    [
+      12,
+      23,
+      0,
+      30,
+      0,
+      "IMAGE"
+    ],
+    [
+      13,
+      40,
+      0,
+      43,
+      0,
+      "MODEL"
+    ],
+    [
+      14,
+      43,
+      0,
+      44,
+      0,
+      "MODEL"
+    ],
+    [
+      15,
+      41,
+      0,
+      50,
+      0,
+      "CLIP"
+    ],
+    [
+      16,
+      41,
+      0,
+      51,
+      0,
+      "CLIP"
+    ],
+    [
+      17,
+      50,
+      0,
+      52,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      18,
+      51,
+      0,
+      52,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      19,
+      52,
+      0,
+      61,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      20,
+      52,
+      1,
+      61,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      21,
+      40,
+      2,
+      61,
+      2,
+      "VAE"
+    ],
+    [
+      22,
+      60,
+      0,
+      61,
+      3,
+      "LATENT"
+    ],
+    [
+      23,
+      30,
+      0,
+      61,
+      4,
+      "IMAGE"
+    ],
+    [
+      24,
+      42,
+      0,
+      62,
+      0,
+      "VAE"
+    ],
+    [
+      25,
+      61,
+      2,
+      63,
+      0,
+      "LATENT"
+    ],
+    [
+      26,
+      62,
+      0,
+      63,
+      1,
+      "LATENT"
+    ],
+    [
+      27,
+      44,
+      0,
+      73,
+      0,
+      "MODEL"
+    ],
+    [
+      28,
+      61,
+      0,
+      73,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      29,
+      61,
+      1,
+      73,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      30,
+      70,
+      0,
+      74,
+      0,
+      "NOISE"
+    ],
+    [
+      31,
+      73,
+      0,
+      74,
+      1,
+      "GUIDER"
+    ],
+    [
+      32,
+      71,
+      0,
+      74,
+      2,
+      "SAMPLER"
+    ],
+    [
+      33,
+      72,
+      0,
+      74,
+      3,
+      "SIGMAS"
+    ],
+    [
+      34,
+      63,
+      0,
+      74,
+      4,
+      "LATENT"
+    ],
+    [
+      35,
+      74,
+      0,
+      80,
+      0,
+      "LATENT"
+    ],
+    [
+      36,
+      61,
+      0,
+      81,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      37,
+      61,
+      1,
+      81,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      38,
+      80,
+      0,
+      81,
+      2,
+      "LATENT"
+    ],
+    [
+      39,
+      81,
+      2,
+      82,
+      0,
+      "LATENT"
+    ],
+    [
+      40,
+      40,
+      2,
+      82,
+      1,
+      "VAE"
+    ],
+    [
+      41,
+      80,
+      1,
+      83,
+      0,
+      "LATENT"
+    ],
+    [
+      42,
+      42,
+      0,
+      83,
+      1,
+      "VAE"
+    ],
+    [
+      43,
+      82,
+      0,
+      84,
+      0,
+      "IMAGE"
+    ],
+    [
+      44,
+      83,
+      0,
+      84,
+      1,
+      "AUDIO"
+    ],
+    [
+      45,
+      84,
+      0,
+      85,
+      0,
+      "VIDEO"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "1. 参考图册 Reference Sheet",
+      "bounding": [
+        -1950,
+        -700,
+        1420,
+        1650
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "2. 模型 + 提示词",
+      "bounding": [
+        -550,
+        -700,
+        1010,
+        900
+      ],
+      "color": "#88A",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 3,
+      "title": "3. 采样",
+      "bounding": [
+        620,
+        -700,
+        690,
+        1050
+      ],
+      "color": "#a1309b",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 4,
+      "title": "4. 解码输出",
+      "bounding": [
+        1300,
+        -700,
+        1090,
+        1050
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.45,
+      "offset": [
+        2500,
+        800
+      ]
+    }
+  },
+  "version": 0.4
+}

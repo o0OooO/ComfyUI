@@ -1,0 +1,151 @@
+# syntax=docker/dockerfile:1.7
+#
+# ComfyUI + SenseNova-U1 本地图片编辑 —— 可复现镜像
+# 复现记录见: user/default/docs/SENSENOVA_U1_SETUP.md
+#
+# 关键约束(已实机验证,改动需谨慎):
+#   - Python 3.11
+#   - torch 2.8.0+cu128 / torchvision 0.23.0+cu128 / torchaudio 2.8.0+cu128 (三者主版本必须一致)
+#   - transformers 4.57.1 / tokenizers 0.22.1 (5.x 会 rope_theta AttributeError)
+#   - sensenova-u1 的 pyproject 钉死 torch/transformers,torchaudio 需手动对齐
+#   - 节点要求 ComfyUI v3 节点 API (comfy_api.latest)
+#
+# 模型权重(sensenova/SenseNova-U1-8B-MoT,约 33GB)默认 NOT 打进镜像,
+# 运行时挂载 HF 缓存卷,见底部 docker run 示例。
+#
+# 构建:
+#   docker build -f user/default/dockerfiles/Dockerfile.sensenova-u1 -t comfyui-sensenova:latest .
+# ============================================================================
+
+# CUDA 12.8 runtime,匹配 cu128 的 torch wheel。需要 NVIDIA 驱动 >= 12.8 对应版本。
+FROM nvidia/cuda:12.8.0-cudnn-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # HF 缓存目录,运行时建议挂卷到这里(避免 33GB 进镜像层)
+    HF_HOME=/root/.cache/huggingface
+
+# 固定版本,保证可复现。
+# COMFYUI_COMMIT 用官方上游 comfyanonymous/ComfyUI 真实存在的 commit。
+# (本地 master 的 b6b73c8b 是 fork 里的 merge commit,官方仓库没有,clone 后 checkout 不到;
+#  70a2e1a8 是该 merge 实际并入的官方上游 commit,即本环境真正基于的官方代码。)
+ARG COMFYUI_COMMIT=70a2e1a8513aada68847ce63eaa2f54ece53a893
+ARG SENSENOVA_COMMIT=fd26e6db93919e7d5abc143ad9ee7a9b681b3923
+
+# ---------------------------------------------------------------------------
+# 1. 系统依赖 + Python 3.11
+# ---------------------------------------------------------------------------
+# 注意:Ubuntu 22.04 自带的 apt python3.11 是 3.11.0rc1(预发布版),
+# kornia 等带 C 扩展的库在该 rc 版上会段错误(SIGSEGV)崩溃。
+# 改用 deadsnakes PPA 安装稳定版 Python 3.11.x(与宿主 conda 的 3.11.15 一致行为)。
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        software-properties-common ca-certificates git wget \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 python3.11-venv python3.11-dev python3.11-distutils \
+        libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && wget -qO /tmp/get-pip.py https://bootstrap.pypa.io/get-pip.py \
+    && python /tmp/get-pip.py && rm /tmp/get-pip.py \
+    && python --version \
+    && python -m pip install --upgrade pip
+
+# ---------------------------------------------------------------------------
+# 2. 拉取代码(固定 commit)
+# ---------------------------------------------------------------------------
+WORKDIR /opt
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git /opt/ComfyUI \
+    && cd /opt/ComfyUI && git checkout ${COMFYUI_COMMIT}
+
+RUN git clone https://github.com/OpenSenseNova/SenseNova-U1.git /opt/SenseNova-U1 \
+    && cd /opt/SenseNova-U1 && git checkout ${SENSENOVA_COMMIT}
+
+# ---------------------------------------------------------------------------
+# 3. 安装依赖(顺序很重要)
+# ---------------------------------------------------------------------------
+# 3a. ComfyUI 依赖
+RUN python -m pip install -r /opt/ComfyUI/requirements.txt
+
+# 3b. sensenova-u1(会把 torch 降到 2.8.0 / transformers 到 4.57.1)
+RUN python -m pip install httpx python-dotenv \
+    && python -m pip install -e /opt/SenseNova-U1
+
+# 3c. 关键修复:对齐 torchaudio 到 torch 主版本,否则 ComfyUI 启动 ABI 崩溃
+RUN python -m pip install "torchaudio==2.8.0" --index-url https://download.pytorch.org/whl/cu128
+
+# ---------------------------------------------------------------------------
+# 4. 安装 ComfyUI 自定义节点
+# ---------------------------------------------------------------------------
+# SenseNova 集成由【两个组件】构成,别混淆:
+#   (a) 推理包 sensenova_u1  —— 第 3b 步已 pip install 进 Python 环境(模型推理代码)
+#   (b) ComfyUI 节点 apps/comfyui/  —— 必须放进 ComfyUI 的 custom_nodes/ 才会被加载
+# 下面这行用 --copy 把 (b) 复制到 /opt/ComfyUI/custom_nodes/ComfyUI-SenseNova-U1
+# (不是软链,容器内自包含;构建后即使删掉 /opt/SenseNova-U1 节点也仍在)。
+RUN python /opt/SenseNova-U1/apps/comfyui/install.py --comfyui /opt/ComfyUI --copy
+
+# --copy 模式关闭了 src 自动发现,需显式告诉节点推理包源码在哪。
+# 注意:第 3b 步是 `pip install -e`(editable),运行时仍依赖 /opt/SenseNova-U1 在原位,
+# 所以这个 repo 不能在构建后删除。
+ENV SENSENOVA_U1_SRC=/opt/SenseNova-U1/src
+
+# 校验节点确实落到了 custom_nodes 下(否则 ComfyUI 不会加载它)
+RUN test -f /opt/ComfyUI/custom_nodes/ComfyUI-SenseNova-U1/nodes.py \
+    && echo "节点已就位: custom_nodes/ComfyUI-SenseNova-U1"
+
+# ---------------------------------------------------------------------------
+# 5. 放入工作流(本仓库已整理好的 sense-nova-u1 工作流集合)
+# ---------------------------------------------------------------------------
+RUN mkdir -p /opt/ComfyUI/user/default/workflows/sense-nova-u1
+COPY user/default/workflows/sense-nova-u1/ /opt/ComfyUI/user/default/workflows/sense-nova-u1/
+# 示例输入图(编辑工作流默认引用)
+COPY input/1.webp /opt/ComfyUI/input/1.webp
+
+# ---------------------------------------------------------------------------
+# 6. 自检(构建期验证依赖版本与模型代码可导入;不下载权重)
+# ---------------------------------------------------------------------------
+RUN python -c "import sys; v=sys.version_info; \
+print('python', sys.version); \
+assert (v.major,v.minor)==(3,11) and v.releaselevel=='final', \
+  'Python 必须是 3.11 稳定版(final),当前 %s %s' % (sys.version.split()[0], v.releaselevel)" \
+    && python -c "import torch,torchaudio,torchvision,transformers; \
+print('torch',torch.__version__,'torchaudio',torchaudio.__version__,'torchvision',torchvision.__version__,'transformers',transformers.__version__); \
+assert torch.__version__.startswith('2.8.0'), 'torch 版本不符'; \
+assert torchaudio.__version__.startswith('2.8.0'), 'torchaudio 未对齐'; \
+assert transformers.__version__=='4.57.1', 'transformers 版本不符'" \
+    && python -c "import kornia; print('kornia import OK', kornia.__version__)" \
+    && python -c "import sensenova_u1; from sensenova_u1.utils import load_model_and_tokenizer; print('sensenova_u1 import OK')"
+
+# ---------------------------------------------------------------------------
+# 7. 入口脚本:启动前确保权重就位(缺失则自动下载),再拉起 ComfyUI
+# ---------------------------------------------------------------------------
+COPY user/default/dockerfiles/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+WORKDIR /opt/ComfyUI
+EXPOSE 8188
+
+# 权重不在镜像里:entrypoint 启动时检查 HF 缓存,缺失则自动下载到 HF_HOME。
+# 挂载缓存卷可让权重只下一次、跨容器复用。
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# ============================================================================
+# 运行示例(强烈建议挂载 HF 缓存卷,避免每次重下 33GB 权重):
+#
+#   docker run --gpus all -p 8188:8188 \
+#     -v $HOME/.cache/huggingface:/root/.cache/huggingface \
+#     -v $PWD/output:/opt/ComfyUI/output \
+#     comfyui-sensenova:latest
+#
+# 行为:
+#   - 首次启动 entrypoint 检测到无权重 -> 自动下载 sensenova/SenseNova-U1-8B-MoT
+#     (约 33GB)到挂载卷;之后启动直接复用,不再重下。
+#   - 不想自动下载(比如离线预置):docker run -e SKIP_MODEL_DOWNLOAD=1 ...
+#   - 想换模型变体:docker run -e SENSENOVA_MODEL_ID=sensenova/SenseNova-U1-A3B-MoT ...
+#   - 追加 ComfyUI 参数:docker run ... comfyui-sensenova:latest --highvram
+#
+# 打开 http://localhost:8188,加载 workflows/sense-nova-u1/ 下的工作流即可。
+# ============================================================================

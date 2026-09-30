@@ -1,0 +1,242 @@
+{
+  "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "flux2_dev_fp8mixed.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "mistral_3_small_flux2_fp8.safetensors",
+      "type": "flux2"
+    }
+  },
+  "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    }
+  },
+  "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "clip",
+        0
+      ],
+      "text": "the two characters shaking hands in a bright modern office, photorealistic"
+    }
+  },
+  "img0": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "ref_a.png"
+    }
+  },
+  "enc0": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "img0",
+        0
+      ],
+      "vae": [
+        "vae",
+        0
+      ]
+    }
+  },
+  "ref0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+      "conditioning": [
+        "pos",
+        0
+      ],
+      "latent": [
+        "enc0",
+        0
+      ]
+    }
+  },
+  "img1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "ref_b.png"
+    }
+  },
+  "enc1": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "img1",
+        0
+      ],
+      "vae": [
+        "vae",
+        0
+      ]
+    }
+  },
+  "ref1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+      "conditioning": [
+        "ref0",
+        0
+      ],
+      "latent": [
+        "enc1",
+        0
+      ]
+    }
+  },
+  "img2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "ref_c.png"
+    }
+  },
+  "enc2": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "img2",
+        0
+      ],
+      "vae": [
+        "vae",
+        0
+      ]
+    }
+  },
+  "ref2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+      "conditioning": [
+        "ref1",
+        0
+      ],
+      "latent": [
+        "enc2",
+        0
+      ]
+    }
+  },
+  "guidance": {
+    "class_type": "FluxGuidance",
+    "inputs": {
+      "conditioning": [
+        "ref2",
+        0
+      ],
+      "guidance": 4.0
+    }
+  },
+  "neg": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "clip",
+        0
+      ],
+      "text": "blurry, lowres, watermark, distorted hands"
+    }
+  },
+  "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    }
+  },
+  "sigmas": {
+    "class_type": "Flux2Scheduler",
+    "inputs": {
+      "steps": 30,
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 42
+    }
+  },
+  "guider": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": [
+        "unet",
+        0
+      ],
+      "positive": [
+        "guidance",
+        0
+      ],
+      "negative": [
+        "neg",
+        0
+      ],
+      "cfg": 1.0
+    }
+  },
+  "adv": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "noise",
+        0
+      ],
+      "guider": [
+        "guider",
+        0
+      ],
+      "sampler": [
+        "sampler",
+        0
+      ],
+      "sigmas": [
+        "sigmas",
+        0
+      ],
+      "latent_image": [
+        "latent",
+        0
+      ]
+    }
+  },
+  "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "adv",
+        0
+      ],
+      "vae": [
+        "vae",
+        0
+      ]
+    }
+  },
+  "save": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "decode",
+        0
+      ],
+      "filename_prefix": "cmp_flux2dev"
+    }
+  }
+}

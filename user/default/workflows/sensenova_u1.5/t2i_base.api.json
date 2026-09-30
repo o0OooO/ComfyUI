@@ -1,0 +1,48 @@
+{
+  "ckpt": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": { "ckpt_name": "SenseNova-U1.5-8B-MoT-T8-int8-convrot-tagged.safetensors" },
+    "_meta": { "title": "U1.5 是 MoT 统一模型:DiT/TE/VAE 都在这一个 ckpt 里(TE 和 VAE 是哨兵张量)" }
+  },
+  "shift": {
+    "class_type": "SenseNovaSamplingOptions",
+    "inputs": { "model": ["ckpt", 0], "shift": 3.0 },
+    "_meta": { "title": "官方 --timestep_shift 3.0(模型配置里本来也是 3.0,这里显式写出来)" }
+  },
+  "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["ckpt", 1],
+      "text": "A cinematic mountain lake at sunrise, mist over the water, snow-capped peaks catching the first warm light, a lone wooden rowboat near the shore, realistic photography, ultra detailed."
+    }
+  },
+  "neg": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["ckpt", 1], "text": "" } },
+  "latent": {
+    "class_type": "EmptyHiDreamO1LatentImage",
+    "inputs": { "width": 2048, "height": 2048, "batch_size": 1 },
+    "_meta": { "title": "像素空间 latent:张量就是 [B,3,H,W],官方原生 2048/4K" }
+  },
+  "sampler": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+  "sigmas": {
+    "class_type": "BasicScheduler",
+    "inputs": { "model": ["shift", 0], "scheduler": "normal", "steps": 50, "denoise": 1.0 },
+    "_meta": { "title": "normal + SenseNovaModelSampling 等价于官方 upstream_sigmas" }
+  },
+  "ks": {
+    "class_type": "SamplerCustom",
+    "inputs": {
+      "model": ["shift", 0],
+      "add_noise": true,
+      "noise_seed": 20260930,
+      "cfg": 4.0,
+      "positive": ["pos", 0],
+      "negative": ["neg", 0],
+      "sampler": ["sampler", 0],
+      "sigmas": ["sigmas", 0],
+      "latent_image": ["latent", 0]
+    },
+    "_meta": { "title": "非蒸馏基座:50 步 / cfg 4.0。细节过锐或颜色过饱和就降 cfg" }
+  },
+  "decode": { "class_type": "VAEDecode", "inputs": { "samples": ["ks", 0], "vae": ["ckpt", 2] } },
+  "save": { "class_type": "SaveImage", "inputs": { "images": ["decode", 0], "filename_prefix": "u1.5_t2i" } }
+}

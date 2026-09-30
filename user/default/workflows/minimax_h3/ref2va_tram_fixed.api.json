@@ -1,0 +1,215 @@
+{
+  "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "minimax_h3_ref2va_pruned_w4a8_mixed.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_w4a8_mixed.safetensors",
+      "type": "minimax"
+    }
+  },
+  "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+    }
+  },
+  "audio_vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+    }
+  },
+  "cond": {
+    "class_type": "MiniMaxH3ReferenceToVideo",
+    "inputs": {
+      "clip": [
+        "clip",
+        0
+      ],
+      "vae": [
+        "vae",
+        0
+      ],
+      "audio_vae": [
+        "audio_vae",
+        0
+      ],
+      "prompt": "subject_definitions:\n<Subject 1> is the man shown in <Picture 1> — 角色【老陈】:年长男性,短白发,深蓝色公交司机制服(左胸挂工牌、肩章),面部深皱纹,神情沉稳。\n<Subject 2> is the girl shown in <Picture 2> — 角色【女孩】:亚洲少女,黑色短发在头顶扎成小丸子、留刘海,双颊被冻出红晕,深青绿色圆领卫衣,外披一件宽大的黑色长外套,浅灰色抽绳运动裤,黑白帆布鞋,背双肩包。\n<Subject 3> is the setting shown in <Picture 3> — 场景【电车内部】:夜间空车厢,两侧蓝灰色长排座椅,黄色吊环成列垂下,车窗带雨痕,车头方向有驾驶台与红色指示灯,顶部一支冷白日光灯管。\n\nsummary:\n[reference generation] Keep <Subject 1> and <Subject 2> exactly as defined and stage the 3 shots described in detailed_description **as 3 separate takes cut back to back** inside <Subject 3>: each [Shot N] block is one continuous camera take, and there is a hard cut between consecutive blocks — do not blend them into one long unbroken move. Characters, wardrobe, location, lighting and grade stay identical across all shots. Do not reuse the framing, camera angle or pose of any reference picture. Only <Subject 2> speaks, and she speaks only in [Shot 3]; <Subject 1> never speaks.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1], [Shot 3]): fully_preserved - facial identity, white hair, blue driver's uniform and body type are retained; pose, framing and gaze direction are newly generated.\n<Subject 2> (appears in [Shot 3]): fully_preserved - facial identity, topknot hair with bangs, flushed cheeks, teal crew-neck sweatshirt, oversized black long coat and grey drawstring sweatpants are retained; pose, framing and gaze direction are newly generated.\n<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3]): partially_preserved - 车厢结构、蓝灰座椅、黄色吊环与驾驶台被保留作为场景;参考图的机位与构图不复制。\n\ndetailed_description:\n真人写实,冷调夜景,电影感。12.25秒\n【摄法】以呼吸节奏为基调,长镜吃进沉默;35mm平视带车窗环境让两人同框却隔着整条过道,老陈握方向盘的手与女孩开口说话时切85mm浅景深;构图以后视镜框二次裁切女孩、平视带仪表盘陪衬老陈,保持失衡的权力感;影调冷蓝灰底色中橙黄路灯逐盏渗入,高反差硬光边缘。\n【连贯】以下 3 段共 3 个镜头:同一镜内是一次连续拍摄、中途不剪,承接上一段结尾的主体位置与运动趋势;镜与镜之间是**硬切**,切换后机位与景别按该段给定的重新起镜。全片人物、服装、场景、光位与影调**全程一致**,不要在段间重新设计造型或换景。\n[Shot 1] 0-4秒(镜1):固定·平视·驾驶舱外侧车窗角度,中景,<Subject 1> 在画面左侧驾驶座,侧身握方向盘,发动车辆,车厢背景向后移动。沉定,不动声色,嘴唇始终闭合,全程不说话、不出声、不哼唱。光影:逆行途中街灯橙黄逐盏从车头方向打来,每过一盏就在车厢内壁扫过一道暖黄光带,随即消退回蓝灰;驾驶舱仪表盘红色指示灯在 <Subject 1> 侧脸投出一点暗红轮廓光,颧骨以上沉入阴影。\n[Shot 2] 4-7秒(镜2):固定·平视·车窗内侧角度,近景,车窗玻璃居画面中央,窗外路灯从右向左依次亮起又退去,橙黄光带横扫画面,玻璃上有雨痕与反光。这个镜头里画面中没有任何人物出现,也没有任何人说话。\n[Shot 3] 7-12.25秒(镜3):85mm浅景深·固定·平视·老陈POV,近景,后视镜框居画面中央,<Subject 2> 在镜框内居中清晰,坐在后排座椅上,视线朝向画面前方。试探,轻声。<Subject 2> (S1) says, in a hesitant low voice, <d>[Chinese]这不算违规吗?</d> 唇形随字句开合,有气口与停顿,说完自然收口、嘴唇闭合,眼神微微垂下。<Subject 1> 的右手虎口在镜框下沿虚化入画;他全程不出声、不开口、嘴唇闭合,只用眼神在后视镜里回望,喉结微动。光影:女孩处只有从车门方向渗来的偏冷暖白日光管余光,面颊在每一盏路灯扫过时短暂被橙黄点亮。\n【念白】全片只有 [Shot 3] 里的 <Subject 2> 有一句台词,她要真的在演这句话:开口说话、唇形随字句开合、有气口与停顿,说完自然收口。<Subject 1> 是听者,只给眼神与微表情反应,不出声。台词只用来定表演与口型,画面里不出现字幕或任何文字。\n【参考用法】每张角色参考图只是一个人的单人样貌基准;成片中【老陈】与【女孩】各自自始至终是同一个人、同一副面孔与身材,全程各只有一个本体,参考图只用来锁定长相与造型。除非镜头描述明确要求出现多人,否则同一角色不要复制、分身、镜像成第二个相同的人。\n\noverall_soundscape:\n柴油发动机低沉启动声与怠速震动,车厢金属轻微咯吱,黄色吊环随车身摆动的轻响,车窗外雨夜街道的远处环境音。除 [Shot 3] 中 <Subject 2> 的那一句台词外,全片没有任何人声:没有旁白、没有其他说话声、没有哼唱、没有叹息、没有含混的呢喃;[Shot 1] 与 [Shot 2] 完全无人说话,只有机械声与环境音。\n\nnon_diegetic_music:\nNone.\n",
+      "width": 864,
+      "height": 480,
+      "length": 294,
+      "ref_image_size": "match",
+      "ref_images.ref_image_0": [
+        "load_0",
+        0
+      ],
+      "ref_images.ref_image_1": [
+        "load_1",
+        0
+      ],
+      "ref_images.ref_image_2": [
+        "load_2",
+        0
+      ]
+    }
+  },
+  "shift": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+      "model": [
+        "unet",
+        0
+      ],
+      "shift_video": 12.0,
+      "shift_audio": 3.0
+    }
+  },
+  "guider": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": [
+        "shift",
+        0
+      ],
+      "conditioning": [
+        "cond",
+        0
+      ]
+    }
+  },
+  "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 0
+    }
+  },
+  "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "res_multistep"
+    }
+  },
+  "sigmas": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": [
+        "shift",
+        0
+      ],
+      "scheduler": "beta",
+      "steps": 20,
+      "denoise": 1.0
+    }
+  },
+  "sample": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "noise",
+        0
+      ],
+      "guider": [
+        "guider",
+        0
+      ],
+      "sampler": [
+        "sampler",
+        0
+      ],
+      "sigmas": [
+        "sigmas",
+        0
+      ],
+      "latent_image": [
+        "cond",
+        1
+      ]
+    }
+  },
+  "decode_video": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "sample",
+        0
+      ],
+      "vae": [
+        "vae",
+        0
+      ]
+    }
+  },
+  "decode_audio": {
+    "class_type": "VAEDecodeAudio",
+    "inputs": {
+      "samples": [
+        "sample",
+        0
+      ],
+      "vae": [
+        "audio_vae",
+        0
+      ]
+    }
+  },
+  "video": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "decode_video",
+        0
+      ],
+      "fps": 24.0,
+      "audio": [
+        "gain",
+        0
+      ]
+    }
+  },
+  "save": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "video",
+        0
+      ],
+      "filename_prefix": "video/MiniMaxH3_tram_fixed",
+      "format": "auto",
+      "codec": "auto"
+    }
+  },
+  "gain": {
+    "class_type": "AudioAdjustVolume",
+    "inputs": {
+      "audio": [
+        "decode_audio",
+        0
+      ],
+      "volume": 8
+    }
+  },
+  "load_0": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "h3ref_laochen.png"
+    }
+  },
+  "load_1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "h3ref_girl.png"
+    }
+  },
+  "load_2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "h3ref_tram.png"
+    }
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "unet": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors", "weight_dtype": "default" },
+    "_meta": { "title": "LTX-2.5 22B 蒸馏版(int8_convrot 21.5G)。要更高质量:换 dev 版 + loras/ltx-2.5-22b-distilled-lora-450 旁路,sigmas 换 30 步" }
+  },
+  "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": { "clip_name": "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors", "type": "ltxv", "device": "default" },
+    "_meta": { "title": "2.5 专用 Gemma-4 12B(带投影层),不是 2.3 的 gemma_3_12B" }
+  },
+  "vvae": { "class_type": "VAELoader", "inputs": { "vae_name": "ltx-2.5-video-vae-bf16.safetensors" } },
+  "avae": { "class_type": "VAELoader", "inputs": { "vae_name": "ltx-2.5-audio-vae-bf16.safetensors" } },
+  "ups": {
+    "class_type": "LatentUpscaleModelLoader",
+    "inputs": { "model_name": "ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors" },
+    "_meta": { "title": "latent 空间 2x 上采样,第二阶段精修前用" }
+  },
+
+  "img": { "class_type": "LoadImage", "inputs": { "image": "wild_goose_pagoda.jpg" } },
+  "rs": {
+    "class_type": "ResizeImageMaskNode",
+    "inputs": {
+      "input": ["img", 0],
+      "resize_type": "scale longer dimension",
+      "resize_type.longer_size": 1536,
+      "scale_method": "lanczos"
+    },
+    "_meta": { "title": "首帧长边缩到 1536;真正的画布由 EmptyLTXVLatentVideo 决定,这里只是别喂超大图" }
+  },
+  "pre": {
+    "class_type": "LTXVPreprocess",
+    "inputs": { "image": ["rs", 0], "img_compression": 18 },
+    "_meta": { "title": "官方首帧预处理:压一遍 JPEG(18)去掉过锐的高频,否则第一帧会和后续帧质感断层" }
+  },
+
+  "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["clip", 0],
+      "text": "Use the provided start image as the first frame. A slow continuous push-in on the Giant Wild Goose Pagoda at dusk: the camera drifts forward and tilts up slightly along the brick tiers, warm low sunlight raking across the eaves, thin clouds drifting behind the top storey. A flock of swifts crosses the sky from left to right. Leaves on the foreground trees stir in a light breeze. Ambient audio: distant city traffic, a faint temple bell, wind in the leaves. Single continuous shot, no camera shake, no text, no black frames."
+    },
+    "_meta": { "title": "2.5 提示词要写清「镜头怎么动 + 画面里发生什么 + 环境音」;音频是和画面一起生成的" }
+  },
+  "neg": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "clip": ["clip", 0], "text": "pc game, console game, video game, cartoon, childish, ugly" },
+    "_meta": { "title": "官方模板的负向就这一句,别抄 Wan 那套长负向" }
+  },
+  "cond": {
+    "class_type": "LTXVConditioning",
+    "inputs": { "positive": ["pos", 0], "negative": ["neg", 0], "frame_rate": 24 }
+  },
+
+  "empty": {
+    "class_type": "EmptyLTXVLatentVideo",
+    "inputs": { "width": 352, "height": 480, "length": 121, "batch_size": 1 },
+    "_meta": { "title": "第一阶段跑「目标分辨率的一半」:704x960 -> 352x480。目标宽高必须能被 64 整除(减半后还要被 32 整除,EmptyLTXVLatentVideo 是 //32 整除,不够就静默截断)。length 必须是 8n+1:5 秒 x 24fps + 1 = 121" }
+  },
+  "in1": {
+    "class_type": "LTXVImgToVideoInplace",
+    "inputs": { "vae": ["vvae", 0], "image": ["pre", 0], "latent": ["empty", 0], "strength": 0.7, "bypass": false },
+    "_meta": { "title": "把首帧写进 latent 第 0 帧。strength 0.7 = 留 0.3 给模型重画,首帧不会被锁死(第二阶段才用 1.0)" }
+  },
+  "aud": {
+    "class_type": "LTXVEmptyLatentAudio",
+    "inputs": { "frames_number": 121, "frame_rate": 24, "batch_size": 1, "audio_vae": ["avae", 0] },
+    "_meta": { "title": "音频 latent 的帧数/帧率必须和视频一致,否则音画不同步" }
+  },
+  "cat1": {
+    "class_type": "LTXVConcatAVLatent",
+    "inputs": { "video_latent": ["in1", 0], "audio_latent": ["aud", 0] },
+    "_meta": { "title": "2.5 是音视频联合去噪:拼成一个 AV latent 一起采样" }
+  },
+
+  "g1": {
+    "class_type": "LTXVDualCFGGuider",
+    "inputs": { "model": ["unet", 0], "positive": ["cond", 0], "negative": ["cond", 1], "video_cfg": 1, "audio_cfg": 1 },
+    "_meta": { "title": "蒸馏版:video/audio cfg 都是 1(等于关 CFG,速度翻倍)。dev 版用 3/7" }
+  },
+  "n1": { "class_type": "RandomNoise", "inputs": { "noise_seed": 20260930 } },
+  "sel": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler_ancestral" } },
+  "sig1": {
+    "class_type": "ManualSigmas",
+    "inputs": { "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0" },
+    "_meta": { "title": "官方 8 步蒸馏 sigmas(前 5 步几乎不动噪声,是 pixel-diffusion 的关键帧阶段),照抄别改" }
+  },
+  "s1": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": { "noise": ["n1", 0], "guider": ["g1", 0], "sampler": ["sel", 0], "sigmas": ["sig1", 0], "latent_image": ["cat1", 0] }
+  },
+  "sep1": { "class_type": "LTXVSeparateAVLatent", "inputs": { "av_latent": ["s1", 0] } },
+
+  "up": {
+    "class_type": "LTXVLatentUpsampler",
+    "inputs": { "samples": ["sep1", 0], "upscale_model": ["ups", 0], "vae": ["vvae", 0] },
+    "_meta": { "title": "352x480 -> 704x960(只放大视频 latent,音频 latent 原样走到第二阶段)" }
+  },
+  "in2": {
+    "class_type": "LTXVImgToVideoInplace",
+    "inputs": { "vae": ["vvae", 0], "image": ["pre", 0], "latent": ["up", 0], "strength": 1.0, "bypass": false },
+    "_meta": { "title": "精修阶段首帧用 strength 1.0 硬锁,保证第一帧就是输入图" }
+  },
+  "cat2": { "class_type": "LTXVConcatAVLatent", "inputs": { "video_latent": ["in2", 0], "audio_latent": ["sep1", 1] } },
+  "g2": {
+    "class_type": "LTXVDualCFGGuider",
+    "inputs": { "model": ["unet", 0], "positive": ["cond", 0], "negative": ["cond", 1], "video_cfg": 1, "audio_cfg": 1 }
+  },
+  "n2": {
+    "class_type": "RandomNoise",
+    "inputs": { "noise_seed": 42 },
+    "_meta": { "title": "第二阶段官方固定 42;这一路种子换了只影响精修细节,构图由第一阶段定" }
+  },
+  "sig2": {
+    "class_type": "ManualSigmas",
+    "inputs": { "sigmas": "0.85, 0.7250, 0.4219, 0.0" },
+    "_meta": { "title": "精修 3 步,从 0.85 起噪(不是从 1.0),所以保留第一阶段的构图" }
+  },
+  "s2": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": { "noise": ["n2", 0], "guider": ["g2", 0], "sampler": ["sel", 0], "sigmas": ["sig2", 0], "latent_image": ["cat2", 0] }
+  },
+  "sep2": { "class_type": "LTXVSeparateAVLatent", "inputs": { "av_latent": ["s2", 0] } },
+
+  "dec": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": { "samples": ["sep2", 0], "vae": ["vvae", 0], "tile_size": 512, "overlap": 64, "temporal_size": 64, "temporal_overlap": 16 },
+    "_meta": { "title": "2.5 的视频解码器本身是个扩散模型,显存吃得比 2.3 狠,用 tiled 解码" }
+  },
+  "adec": { "class_type": "LTXVAudioVAEDecode", "inputs": { "samples": ["sep2", 1], "audio_vae": ["avae", 0] } },
+  "mkvid": { "class_type": "CreateVideo", "inputs": { "images": ["dec", 0], "audio": ["adec", 0], "fps": 24 } },
+  "save": {
+    "class_type": "SaveVideo",
+    "inputs": { "video": ["mkvid", 0], "filename_prefix": "video/ltx2.5_i2v", "format": "auto", "format.codec": "auto" }
+  }
+}

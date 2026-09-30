@@ -1,0 +1,53 @@
+{
+  "unet": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "qwen_image_2.1_int8_convrot.safetensors", "weight_dtype": "default" }
+  },
+  "cache": {
+    "class_type": "QwenImage21Cache",
+    "inputs": { "model": ["unet", 0], "device": "auto", "dtype": "default" }
+  },
+  "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": { "clip_name": "qwen3vl_8b_int8_convrot.safetensors", "type": "qwen_image", "device": "default" }
+  },
+  "vae": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "qwen_image_2.1_vae_bf16.safetensors" }
+  },
+  "img1": { "class_type": "LoadImage", "inputs": { "image": "sancai_tang_horse.jpg" } },
+  "enc": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": ["clip", 0],
+      "vae": ["vae", 0],
+      "images.image_1": ["img1", 0],
+      "prompt": "Remove the background, and output a PNG image",
+      "negative_prompt": "",
+      "resolution": 0
+    },
+    "_meta": { "title": "resolution=0:保持原图尺寸(只对齐到 32 的倍数)" }
+  },
+  "ks": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["cache", 0],
+      "positive": ["enc", 0],
+      "negative": ["enc", 1],
+      "latent_image": ["enc", 2],
+      "seed": 733114857276099,
+      "steps": 25,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1
+    },
+    "_meta": { "title": "latent 取 enc 的第 3 个输出 → 画布跟随 image_1" }
+  },
+  "decode": { "class_type": "VAEDecode", "inputs": { "samples": ["ks", 0], "vae": ["vae", 0] } },
+  "save": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["decode", 0], "filename_prefix": "qwen2.1_rmbg" },
+    "_meta": { "title": "SaveImage 会按通道数写 RGBA;UI 里官方用 SaveImage (Advanced) png/8-bit/sRGB" }
+  }
+}

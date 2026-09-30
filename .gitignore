@@ -5,8 +5,9 @@ __pycache__/
 !/input/example.png
 /models/
 /temp/
-/custom_nodes/
+/custom_nodes/*
 !custom_nodes/example_node.py.example
+!/custom_nodes/ComfyUI-SenseNova-U1
 extra_model_paths.yaml
 /.vs
 .vscode/
@@ -17,7 +18,6 @@ venv*/
 !/web/extensions/logging.js.example
 !/web/extensions/core/
 /tests-ui/data/object_info.json
-/user/
 *.log
 web_custom_versions/
 .DS_Store
