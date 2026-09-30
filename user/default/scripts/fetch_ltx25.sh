@@ -93,7 +93,8 @@ run_manifest() {
 # ---------------------------------------------------------------- 前置体检
 hf_token() {
     [ -n "${HF_TOKEN:-}" ] && { echo "$HF_TOKEN"; return; }
-    "$HF" auth token 2>/dev/null || true
+    # 直接读文件:sensenova 环境里的 hf 是 0.36,没有 `auth token` 子命令
+    cat "${HF_HOME:-$HOME/.cache/huggingface}/token" 2>/dev/null || true
 }
 
 # gated 仓库能不能真的下:元数据 200 不代表能下,要拿单个文件试 range GET。
