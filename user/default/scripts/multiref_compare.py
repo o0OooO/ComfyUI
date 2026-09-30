@@ -1,16 +1,27 @@
 #!/usr/bin/env python3
 """
-multiref_compare.py — 同一组参考图 + 同一条提示词,横向对比三个模型的"多参考图生图"效果。
+multiref_compare.py — 同一组参考图 + 同一条提示词,横向对比各模型的"多参考图生图"效果。
 
-  qwen       Qwen-Image-Edit-2511   最多 3 张参考图  Apache-2.0   20B fp8mixed
-  flux       FLUX.2-dev             多张(链式)       权重非商用    32B fp8mixed
-  sensenova  SenseNova-U1-8B-MoT    最多 6 张参考图  本地已有      8B
+当代(默认跑这三个):
 
-三者机制不同,脚本已各自适配:
+  qwen21     Qwen-Image-2.1         最多 10 张参考图  Qwen Research(非商用)  20B int8
+  flux       FLUX.2-dev             多张(链式)        权重非商用              32B fp8mixed
+  u15        SenseNova-U1.5-8B-MoT  最多 10 张参考图  本地已有                8B + 8 步 LoRA
+
+上一代(留作对照,--model 显式指定才跑):
+
+  qwen       Qwen-Image-Edit-2511   最多 3 张参考图   Apache-2.0   20B fp8mixed
+  sensenova  SenseNova-U1-8B-MoT    最多 6 张参考图   本地已有      8B
+
+机制各不相同,脚本已各自适配:
+  - qwen21: 参考图走 TextEncodeQwenImage21 的 autogrow 槽 images.image_1..image_10,
+          提示词里用 <image1>..<image10> 点名;cfg 必须是 1(负向走 negative_prompt)。
   - qwen: 参考图喂给 TextEncodeQwenImageEditPlus 的 image1/2/3(节点只有 3 个槽位),
           图会同时过 Qwen2.5-VL(缩到 384²做视觉理解) 和 VAE(缩到 1024²做 ref_latent)。
   - flux: 参考图各自 VAEEncode 后,用 ReferenceLatent 链式串联 —— 节点自述
           "chain multiple to set multiple reference images",所以张数不受节点槽位限制。
+  - u15: 纯核心节点。参考图走共享的 HiDreamO1ReferenceImages(images.image_1..image_100),
+          latent 是像素空间 EmptyHiDreamO1LatentImage;默认挂 8 步蒸馏 LoRA(cfg 1.0)。
   - sensenova: 走 SenseNovaU1LocalCompose(image + image2..image6),
           prompt 里用 <image> 占位符按序绑定,详见 sensenova_api.py compose。
 
@@ -18,17 +29,23 @@ multiref_compare.py — 同一组参考图 + 同一条提示词,横向对比三�
       qwen/flux 权重由 restore_multiref_models.sh 准备。
 
 示例:
-  # 三个模型全跑,同一组图 + 同一条 prompt
+  # 当代三个全跑(qwen21 / flux / u15),同一组图 + 同一条 prompt
   python multiref_compare.py --ref charA.png --ref charB.png \
       --prompt "the two people shaking hands in a modern office" \
       --outdir ./cmp
 
-  # 只跑 qwen 和 flux,固定 seed 便于复现
-  python multiref_compare.py -m qwen -m flux --ref a.png --ref b.png --ref c.png \
-      --prompt "..." --seed 123 --steps 30
+  # 新老同台:2.1 vs 2511、U1.5 vs U1
+  python multiref_compare.py -m qwen21 -m qwen -m u15 -m sensenova \
+      --ref a.png --ref b.png --ref c.png --prompt "..." --seed 123 --steps 30
 
-  # sensenova 的 prompt 需要 <image> 占位符,可用 --sensenova-prompt 单独给
-  python multiref_compare.py --ref charA.png --ref prop.png \
+  # qwen21 要用 <imageN> 点名参考图,u15 直接写中文指令
+  python multiref_compare.py -m qwen21 -m u15 --ref charA.png --ref prop.png \
+      --prompt "把 <image1> 里的人手持 <image2> 的产品,明亮影棚打光" \
+      --qwen21-prompt "The person from <image1> holding the product from <image2>, bright studio lighting" \
+      --outdir ./cmp
+
+  # sensenova(上一代)的 prompt 需要 <image> 占位符,可用 --sensenova-prompt 单独给
+  python multiref_compare.py -m sensenova --ref charA.png --ref prop.png \
       --prompt "a person holding the product in a bright studio" \
       --sensenova-prompt "<image> 手持 <image>,明亮影棚打光" \
       --outdir ./cmp
@@ -58,8 +75,18 @@ FLUX_TURBO_LORA = "Flux2TurboComfyv2.safetensors"
 
 SENSENOVA_MODEL = "sensenova/SenseNova-U1-8B-MoT"
 
+QWEN21_UNET = "qwen_image_2.1_int8_convrot.safetensors"
+QWEN21_CLIP = "qwen3vl_8b_int8_convrot.safetensors"
+QWEN21_VAE = "qwen_image_2.1_vae_bf16.safetensors"
+
+U15_CKPT = "SenseNova-U1.5-8B-MoT-T8-int8-convrot-tagged.safetensors"
+# 官方 V2 原始文件缺 diffusion_model. 前缀,加载不生效;-comfy 那份是补过前缀的
+U15_LORA_8STEP = "SenseNova-U1.5-8B-MoT-LoRA-8step-V2-comfy.safetensors"
+
 QWEN_MAX_REFS = 3  # TextEncodeQwenImageEditPlus 只有 image1/2/3
+QWEN21_MAX_REFS = 10  # TextEncodeQwenImage21: <image1>..<image10>
 SENSENOVA_MAX_REFS = 6  # SenseNovaU1LocalCompose: image + image2..image6
+U15_MAX_REFS = 10  # 节点支持到 image_100,这里按实用上限收在 10
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +124,102 @@ def build_qwen(args, ref_names: list[str]) -> dict:
         "samples": ["ksampler", 0], "vae": ["vae", 0]}}
     n["save"] = {"class_type": "SaveImage", "inputs": {
         "images": ["decode", 0], "filename_prefix": "cmp_qwen2511"}}
+    return n
+
+
+def build_qwen21(args, ref_names: list[str]) -> dict:
+    """Qwen-Image-2.1:参考图走 autogrow 槽 images.image_1..image_10。
+
+    和 2511 的三个差别:
+      - 槽位是 autogrow 的点号键(images.image_N),不是固定的 image1/2/3;
+      - resolution 是**总像素预算**(0 = 保持 image_1 原尺寸,只对齐到 32);
+      - 负向走 negative_prompt 编进同一次前向,所以 KSampler 的 cfg 必须是 1。
+    """
+    refs = ref_names[:QWEN21_MAX_REFS]
+    prompt = args.qwen21_prompt or args.prompt
+    n = {
+        "unet": {"class_type": "UNETLoader", "inputs": {
+            "unet_name": QWEN21_UNET, "weight_dtype": "default"}},
+        "cache": {"class_type": "QwenImage21Cache", "inputs": {
+            "model": ["unet", 0], "device": "auto", "dtype": "default"}},
+        "clip": {"class_type": "CLIPLoader", "inputs": {
+            "clip_name": QWEN21_CLIP, "type": "qwen_image", "device": "default"}},
+        "vae": {"class_type": "VAELoader", "inputs": {"vae_name": QWEN21_VAE}},
+    }
+    enc = {"clip": ["clip", 0], "vae": ["vae", 0], "prompt": prompt,
+           "negative_prompt": args.negative, "resolution": args.width}
+    for i, name in enumerate(refs):
+        nid = f"img{i}"
+        n[nid] = {"class_type": "LoadImage", "inputs": {"image": name}}
+        enc[f"images.image_{i + 1}"] = [nid, 0]
+    n["enc"] = {"class_type": "TextEncodeQwenImage21", "inputs": enc}
+
+    # 固定画布,和其他模型同尺寸便于对比。想让画布跟随 image_1 就把 latent 换成 ["enc", 2]
+    n["latent"] = {"class_type": "EmptyLatentImage", "inputs": {
+        "width": args.width, "height": args.height, "batch_size": 1}}
+    n["ksampler"] = {"class_type": "KSampler", "inputs": {
+        "model": ["cache", 0], "positive": ["enc", 0], "negative": ["enc", 1],
+        "latent_image": ["latent", 0], "seed": args.seed, "steps": args.steps,
+        "cfg": 1, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}}
+    n["decode"] = {"class_type": "VAEDecode", "inputs": {
+        "samples": ["ksampler", 0], "vae": ["vae", 0]}}
+    n["save"] = {"class_type": "SaveImage", "inputs": {
+        "images": ["decode", 0], "filename_prefix": "cmp_qwen2.1"}}
+    return n
+
+
+def build_u15(args, ref_names: list[str]) -> dict:
+    """SenseNova-U1.5-8B-MoT:纯核心节点,不需要自定义节点也不走 wrapper 推理脚本。
+
+    一个 ckpt 同时出 MODEL/CLIP/VAE(TE 和 VAE 是核心合成的哨兵);
+    latent 是像素空间([B,3,H,W]),所以画布用 EmptyHiDreamO1LatentImage;
+    参考图走共享的 HiDreamO1ReferenceImages(images.image_1..image_100)。
+    """
+    refs = ref_names[:U15_MAX_REFS]
+    n = {"ckpt": {"class_type": "CheckpointLoaderSimple",
+                  "inputs": {"ckpt_name": U15_CKPT}}}
+    model_src = ["ckpt", 0]
+    steps, cfg = args.steps, args.cfg
+    if not args.u15_base:
+        n["lora"] = {"class_type": "LoraLoaderModelOnly", "inputs": {
+            "model": ["ckpt", 0], "lora_name": U15_LORA_8STEP,
+            "strength_model": 1.0}}
+        model_src = ["lora", 0]
+        steps, cfg = 8, 1.0  # 官方 8 步配方,--steps/--cfg 在这一档不生效
+    # 官方 --timestep_shift 3.0;resolution_noise_scale 是自动的,不用额外节点
+    n["shift"] = {"class_type": "SenseNovaSamplingOptions", "inputs": {
+        "model": model_src, "shift": 3.0}}
+
+    n["pos"] = {"class_type": "CLIPTextEncode", "inputs": {
+        "clip": ["ckpt", 1], "text": args.prompt}}
+    n["neg"] = {"class_type": "CLIPTextEncode", "inputs": {
+        "clip": ["ckpt", 1], "text": args.negative}}
+
+    pos_src, neg_src = ["pos", 0], ["neg", 0]
+    if refs:
+        ri = {"positive": ["pos", 0], "negative": ["neg", 0]}
+        for i, name in enumerate(refs):
+            nid = f"img{i}"
+            n[nid] = {"class_type": "LoadImage", "inputs": {"image": name}}
+            ri[f"images.image_{i + 1}"] = [nid, 0]
+        n["refs"] = {"class_type": "HiDreamO1ReferenceImages", "inputs": ri}
+        pos_src, neg_src = ["refs", 0], ["refs", 1]
+
+    n["latent"] = {"class_type": "EmptyHiDreamO1LatentImage", "inputs": {
+        "width": args.width, "height": args.height, "batch_size": 1}}
+    n["sampler"] = {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}}
+    # normal + SenseNovaModelSampling = 官方 upstream_sigmas,别换 scheduler
+    n["sigmas"] = {"class_type": "BasicScheduler", "inputs": {
+        "model": ["shift", 0], "scheduler": "normal", "steps": steps, "denoise": 1.0}}
+    n["ks"] = {"class_type": "SamplerCustom", "inputs": {
+        "model": ["shift", 0], "add_noise": True, "noise_seed": args.seed, "cfg": cfg,
+        "positive": pos_src, "negative": neg_src,
+        "sampler": ["sampler", 0], "sigmas": ["sigmas", 0],
+        "latent_image": ["latent", 0]}}
+    n["decode"] = {"class_type": "VAEDecode", "inputs": {
+        "samples": ["ks", 0], "vae": ["ckpt", 2]}}
+    n["save"] = {"class_type": "SaveImage", "inputs": {
+        "images": ["decode", 0], "filename_prefix": "cmp_u1.5"}}
     return n
 
 
@@ -188,12 +311,18 @@ def build_sensenova(args, ref_names: list[str]) -> dict:
     return n
 
 
-BUILDERS = {"qwen": build_qwen, "flux": build_flux, "sensenova": build_sensenova}
+BUILDERS = {"qwen21": build_qwen21, "flux": build_flux, "u15": build_u15,
+            "qwen": build_qwen, "sensenova": build_sensenova}
 LABELS = {
-    "qwen": "Qwen-Image-Edit-2511 (20B, Apache-2.0)",
+    "qwen21": "Qwen-Image-2.1 (20B int8, Qwen Research 非商用)",
     "flux": "FLUX.2-dev (32B, 权重非商用)",
-    "sensenova": "SenseNova-U1-8B-MoT (8B, 本地)",
+    "u15": "SenseNova-U1.5-8B-MoT (8B, 本地)",
+    "qwen": "Qwen-Image-Edit-2511 (20B, Apache-2.0) [上一代]",
+    "sensenova": "SenseNova-U1-8B-MoT (8B, 本地) [上一代]",
 }
+DEFAULT_MODELS = ["qwen21", "flux", "u15"]
+MAX_REFS = {"qwen21": QWEN21_MAX_REFS, "qwen": QWEN_MAX_REFS,
+            "u15": U15_MAX_REFS, "sensenova": SENSENOVA_MAX_REFS}
 
 
 # ---------------------------------------------------------------------------
@@ -203,19 +332,24 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__.split("示例:")[-1])
     p.add_argument("-m", "--model", action="append", choices=list(BUILDERS),
-                   help="要跑的模型,可多次传入(默认三个都跑)")
+                   help=f"要跑的模型,可多次传入(默认 {' '.join(DEFAULT_MODELS)})")
     p.add_argument("--ref", action="append", required=True,
-                   help="参考图路径,可多次传入(qwen 只用前 3 张,sensenova 前 6 张)")
-    p.add_argument("--prompt", required=True, help="提示词(qwen/flux 用)")
+                   help="参考图路径,可多次传入(超出各模型上限的会被截掉,见 --help 顶部说明)")
+    p.add_argument("--prompt", required=True, help="提示词(qwen21/qwen/flux/u15 用)")
+    p.add_argument("--qwen21-prompt", default="", dest="qwen21_prompt",
+                   help="Qwen-Image-2.1 专用提示词(用 <image1>..<image10> 点名参考图;不给则复用 --prompt)")
+    p.add_argument("--u15-base", action="store_true", dest="u15_base",
+                   help="U1.5 走无 LoRA 的基础档(用 --steps/--cfg);默认是 8 步蒸馏档 cfg 1.0")
     p.add_argument("--sensenova-prompt", default="", dest="sensenova_prompt",
-                   help="SenseNova 专用提示词(需 <image> 占位符按序绑定;不给则复用 --prompt)")
+                   help="SenseNova-U1 专用提示词(需 <image> 占位符按序绑定;不给则复用 --prompt)")
     p.add_argument("--negative", default="", help="负向提示词(sensenova 不支持,忽略)")
     p.add_argument("--outdir", default="./multiref_cmp", help="输出目录")
-    p.add_argument("--width", type=int, default=1024, help="输出宽(16 的倍数)")
-    p.add_argument("--height", type=int, default=1024, help="输出高(16 的倍数)")
-    p.add_argument("--steps", type=int, default=30, help="采样步数")
-    p.add_argument("--seed", type=int, default=42, help="随机种子(三个模型共用,便于复现)")
-    p.add_argument("--cfg", type=float, default=4.0, help="CFG(qwen/sensenova)")
+    p.add_argument("--width", type=int, default=1024, help="输出宽(32 的倍数)")
+    p.add_argument("--height", type=int, default=1024, help="输出高(32 的倍数)")
+    p.add_argument("--steps", type=int, default=30, help="采样步数(u15 蒸馏档固定 8 步)")
+    p.add_argument("--seed", type=int, default=42, help="随机种子(所有模型共用,便于复现)")
+    p.add_argument("--cfg", type=float, default=4.0,
+                   help="CFG(qwen/sensenova/u15 基础档;qwen21 强制 1,u15 蒸馏档强制 1.0)")
     p.add_argument("--flux-cfg", type=float, default=1.0, dest="flux_cfg",
                    help="FLUX.2 的 CFG(用 FluxGuidance 时通常保持 1.0)")
     p.add_argument("--flux-guidance", type=float, default=4.0, dest="flux_guidance",
@@ -233,11 +367,12 @@ def parse_args():
 
 def main():
     args = parse_args()
-    models = args.model or ["qwen", "flux", "sensenova"]
+    models = args.model or list(DEFAULT_MODELS)
 
+    # 32 是最严的那档(qwen21 对齐 32、u15 的像素空间 latent 也要 32),统一按 32 卡
     for w, label in ((args.width, "width"), (args.height, "height")):
-        if w % 16:
-            sys.exit(f"[错误] --{label} 需为 16 的倍数,收到 {w}")
+        if w % 32:
+            sys.exit(f"[错误] --{label} 需为 32 的倍数,收到 {w}")
 
     client = ComfyClient(args.server)
     client.ping()
@@ -250,11 +385,15 @@ def main():
     for p, n in zip(args.ref, ref_names):
         print(f"        {os.path.basename(p)} -> {n}")
 
-    if len(args.ref) > QWEN_MAX_REFS and "qwen" in models:
-        print(f"[注意] 传了 {len(args.ref)} 张,Qwen 节点只有 3 个图槽位,"
-              f"只用前 {QWEN_MAX_REFS} 张")
-    if len(args.ref) > SENSENOVA_MAX_REFS and "sensenova" in models:
-        print(f"[注意] SenseNova 最多 6 张,只用前 {SENSENOVA_MAX_REFS} 张")
+    for m in models:
+        cap = MAX_REFS.get(m)
+        if cap and len(args.ref) > cap:
+            print(f"[注意] 传了 {len(args.ref)} 张,{m} 上限 {cap} 张,只用前 {cap} 张")
+    if "qwen21" in models:
+        tag_prompt = args.qwen21_prompt or args.prompt
+        if not any(f"<image{i}>" in tag_prompt for i in range(1, QWEN21_MAX_REFS + 1)):
+            print("[注意] Qwen-Image-2.1 要在提示词里用 <image1>..<imageN> 点名参考图,"
+                  "不点名的容易被当背景信息忽略 —— 可用 --qwen21-prompt 单独指定")
     if "sensenova" in models and not args.sensenova_prompt \
             and "<image>" not in args.prompt:
         print("[注意] SenseNova compose 通常需要 prompt 里带 <image> 占位符按序绑定参考图;"
