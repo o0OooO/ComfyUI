@@ -1,0 +1,69 @@
+{
+  "ckpt": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": { "ckpt_name": "SenseNova-U1.5-8B-MoT-T8-int8-convrot-tagged.safetensors" }
+  },
+  "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": ["ckpt", 0],
+      "lora_name": "SenseNova-U1.5-8B-MoT-LoRA-8step-V2-comfy.safetensors",
+      "strength_model": 1.0
+    }
+  },
+  "shift": { "class_type": "SenseNovaSamplingOptions", "inputs": { "model": ["lora", 0], "shift": 3.0 } },
+  "img": { "class_type": "LoadImage", "inputs": { "image": "sancai_tang_horse.jpg" } },
+  "size": { "class_type": "GetImageSize", "inputs": { "image": ["img", 0] } },
+  "w": {
+    "class_type": "ComfyMathExpression",
+    "inputs": { "expression": "floor(a/32)*32", "values.a": ["size", 0] },
+    "_meta": { "title": "输出画布对齐到 32 的倍数(取 INT 输出,即第 2 个口)" }
+  },
+  "h": {
+    "class_type": "ComfyMathExpression",
+    "inputs": { "expression": "floor(a/32)*32", "values.a": ["size", 1] }
+  },
+  "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["ckpt", 1],
+      "text": "把这匹唐三彩陶马的釉色改成青蓝与月白为主的釉色,保留开片质感;造型、姿态、骑手、底座、拍摄角度和光照都保持不变。"
+    },
+    "_meta": { "title": "U1.5 中文指令跟随很好,直接写中文即可" }
+  },
+  "neg": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["ckpt", 1], "text": "" } },
+  "refs": {
+    "class_type": "HiDreamO1ReferenceImages",
+    "inputs": {
+      "positive": ["pos", 0],
+      "negative": ["neg", 0],
+      "images.image_1": ["img", 0]
+    },
+    "_meta": { "title": "U1.5 复用 HiDream-O1 这个参考图节点(最多 image_1..image_100,按序号顺序喂)" }
+  },
+  "latent": {
+    "class_type": "EmptyHiDreamO1LatentImage",
+    "inputs": { "width": ["w", 1], "height": ["h", 1], "batch_size": 1 }
+  },
+  "sampler": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+  "sigmas": {
+    "class_type": "BasicScheduler",
+    "inputs": { "model": ["shift", 0], "scheduler": "normal", "steps": 8, "denoise": 1.0 }
+  },
+  "ks": {
+    "class_type": "SamplerCustom",
+    "inputs": {
+      "model": ["shift", 0],
+      "add_noise": true,
+      "noise_seed": 20260930,
+      "cfg": 1.0,
+      "positive": ["refs", 0],
+      "negative": ["refs", 1],
+      "sampler": ["sampler", 0],
+      "sigmas": ["sigmas", 0],
+      "latent_image": ["latent", 0]
+    }
+  },
+  "decode": { "class_type": "VAEDecode", "inputs": { "samples": ["ks", 0], "vae": ["ckpt", 2] } },
+  "save": { "class_type": "SaveImage", "inputs": { "images": ["decode", 0], "filename_prefix": "u1.5_edit" } }
+}

@@ -1,0 +1,57 @@
+{
+  "ckpt": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": { "ckpt_name": "SenseNova-U1.5-8B-MoT-T8-int8-convrot-tagged.safetensors" },
+    "_meta": { "title": "U1.5 是 MoT 统一模型:DiT/TE/VAE 都在这一个 ckpt 里(TE 和 VAE 是哨兵张量)" }
+  },
+  "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": ["ckpt", 0],
+      "lora_name": "SenseNova-U1.5-8B-MoT-LoRA-8step-V2-comfy.safetensors",
+      "strength_model": 1.0
+    },
+    "_meta": { "title": "官方 8 步蒸馏 LoRA V2(比 V1 颜色更稳、不过锐)。V2 原始文件缺 diffusion_model. 前缀,-comfy 那份是补过前缀的" }
+  },
+  "shift": {
+    "class_type": "SenseNovaSamplingOptions",
+    "inputs": { "model": ["lora", 0], "shift": 3.0 },
+    "_meta": { "title": "官方 --timestep_shift 3.0" }
+  },
+  "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["ckpt", 1],
+      "text": "A cinematic mountain lake at sunrise, mist over the water, snow-capped peaks catching the first warm light, a lone wooden rowboat near the shore, realistic photography, ultra detailed."
+    }
+  },
+  "neg": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["ckpt", 1], "text": "" } },
+  "latent": {
+    "class_type": "EmptyHiDreamO1LatentImage",
+    "inputs": { "width": 2048, "height": 2048, "batch_size": 1 },
+    "_meta": { "title": "像素空间 latent([B,3,H,W]),官方原生 2048;1024 实测也在分布内" }
+  },
+  "sampler": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+  "sigmas": {
+    "class_type": "BasicScheduler",
+    "inputs": { "model": ["shift", 0], "scheduler": "normal", "steps": 8, "denoise": 1.0 },
+    "_meta": { "title": "normal + SenseNovaModelSampling = 官方 upstream_sigmas" }
+  },
+  "ks": {
+    "class_type": "SamplerCustom",
+    "inputs": {
+      "model": ["shift", 0],
+      "add_noise": true,
+      "noise_seed": 20260930,
+      "cfg": 1.0,
+      "positive": ["pos", 0],
+      "negative": ["neg", 0],
+      "sampler": ["sampler", 0],
+      "sigmas": ["sigmas", 0],
+      "latent_image": ["latent", 0]
+    },
+    "_meta": { "title": "官方 8 步配方:cfg 1.0 / 8 步 / shift 3.0" }
+  },
+  "decode": { "class_type": "VAEDecode", "inputs": { "samples": ["ks", 0], "vae": ["ckpt", 2] } },
+  "save": { "class_type": "SaveImage", "inputs": { "images": ["decode", 0], "filename_prefix": "u1.5_t2i_8step" } }
+}
