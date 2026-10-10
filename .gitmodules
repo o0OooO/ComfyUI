@@ -1,3 +1,6 @@
 [submodule "custom_nodes/ComfyUI-SenseNova-U1"]
 	path = custom_nodes/ComfyUI-SenseNova-U1
 	url = git@github.com:o0OooO/ComfyUI-SenseNova-U1.git
+[submodule "custom_nodes/ComfyUI-Video-Depth-Anything"]
+	path = custom_nodes/ComfyUI-Video-Depth-Anything
+	url = https://github.com/yuvraj108c/ComfyUI-Video-Depth-Anything

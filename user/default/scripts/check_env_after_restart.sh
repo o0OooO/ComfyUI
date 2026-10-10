@@ -51,6 +51,28 @@ else
     fail "ComfyUI-SenseNova-U1 缺失 —— SenseNova 所有节点都不可用"
     TODO+=("git submodule update --init --recursive")
 fi
+if [ -f custom_nodes/ComfyUI-Video-Depth-Anything/node.py ]; then
+    pass "ComfyUI-Video-Depth-Anything 存在"
+else
+    fail "ComfyUI-Video-Depth-Anything 缺失 —— 视频深度工作流不可用"
+    TODO+=("git submodule update --init --recursive")
+fi
+
+echo
+echo "==================== 2b. Video-Depth-Anything(依赖 + EBS 权重) ===================="
+# 依赖装在 sensenova conda 环境(根盘),权重在 /mnt/models,models/ 下只是软链
+if /home/ubuntu/miniconda3/envs/sensenova/bin/python -c "import cv2, matplotlib, easydict, imageio, OpenEXR" 2>/dev/null; then
+    pass "VDA pip 依赖齐全"
+else
+    fail "VDA pip 依赖缺失"
+    TODO+=("~/miniconda3/envs/sensenova/bin/pip install -r custom_nodes/ComfyUI-Video-Depth-Anything/requirements.txt")
+fi
+if [ -f models/videodepthanything/video_depth_anything_vitl.pth ]; then
+    pass "videodepthanything/video_depth_anything_vitl.pth"
+else
+    fail "videodepthanything/video_depth_anything_vitl.pth(软链或权重缺失)"
+    TODO+=("ln -sfn $EBS/videodepthanything models/videodepthanything   # 权重本身也没了的话,节点首次运行会自动从 HF 下载")
+fi
 
 echo
 echo "==================== 3. Qwen / FLUX 权重(EBS,应当保留) ===================="

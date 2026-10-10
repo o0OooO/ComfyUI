@@ -1,0 +1,9 @@
+{
+  "vid": {"class_type": "LoadVideo", "inputs": {"file": "test_ctrl.mp4"}},
+  "vcomp": {"class_type": "GetVideoComponents", "inputs": {"video": ["vid", 0]}},
+  "vda": {"class_type": "LoadVideoDepthAnythingModel", "inputs": {"model": "video_depth_anything_vitl.pth"}},
+  "depth": {"class_type": "VideoDepthAnythingProcess", "inputs": {"vda_model": ["vda", 0], "images": ["vcomp", 0], "input_size": 518, "max_res": 1280, "precision": "fp16"}},
+  "render": {"class_type": "VideoDepthAnythingOutput", "inputs": {"depths": ["depth", 0], "colormap": "gray"}, "_meta": {"title": "gray 给 ControlNet / 深度条件用;inferno 是给人看的伪彩"}},
+  "mkvid": {"class_type": "CreateVideo", "inputs": {"images": ["render", 0], "fps": ["vcomp", 2]}},
+  "save": {"class_type": "SaveVideo", "inputs": {"video": ["mkvid", 0], "filename_prefix": "video/depth_vda", "format": "auto", "format.codec": "auto"}}
+}
