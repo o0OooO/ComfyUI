@@ -8,6 +8,8 @@ multiref_compare.py — 同一组参考图 + 同一条提示词,横向对比各�
   flux       FLUX.2-dev             多张(链式)        权重非商用              32B fp8mixed
   u15        SenseNova-U1.5-8B-MoT  最多 10 张参考图  本地已有                8B + 8 步 LoRA
 
+  flux3      FLUX.3 Image Klein     最多 10 张参考图  FLUX Kommunity License  5.6B int8,-m flux3 显式指定
+
 上一代(留作对照,--model 显式指定才跑):
 
   qwen       Qwen-Image-Edit-2511   最多 3 张参考图   Apache-2.0   20B fp8mixed
@@ -20,13 +22,15 @@ multiref_compare.py — 同一组参考图 + 同一条提示词,横向对比各�
           图会同时过 Qwen2.5-VL(缩到 384²做视觉理解) 和 VAE(缩到 1024²做 ref_latent)。
   - flux: 参考图各自 VAEEncode 后,用 ReferenceLatent 链式串联 —— 节点自述
           "chain multiple to set multiple reference images",所以张数不受节点槽位限制。
+  - flux3: prompt 先过 Qwen3.5-9B upsampler 扩写,参考图走 ReferenceMultiLatent;
+          固定 16 步 cfg 1(--steps/--cfg 不生效),扩写后的 prompt 记进 compare_meta.json。
   - u15: 纯核心节点。参考图走共享的 HiDreamO1ReferenceImages(images.image_1..image_100),
           latent 是像素空间 EmptyHiDreamO1LatentImage;默认挂 8 步蒸馏 LoRA(cfg 1.0)。
   - sensenova: 走 SenseNovaU1LocalCompose(image + image2..image6),
           prompt 里用 <image> 占位符按序绑定,详见 sensenova_api.py compose。
 
 依赖:仅标准库。需要 ComfyUI 正在运行。
-      qwen/flux 权重由 restore_multiref_models.sh 准备。
+      qwen/flux/flux3 权重由 restore_multiref_models.sh 准备。
 
 示例:
   # 当代三个全跑(qwen21 / flux / u15),同一组图 + 同一条 prompt
@@ -54,6 +58,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -87,6 +92,17 @@ QWEN_MAX_REFS = 3  # TextEncodeQwenImageEditPlus 只有 image1/2/3
 QWEN21_MAX_REFS = 10  # TextEncodeQwenImage21: <image1>..<image10>
 SENSENOVA_MAX_REFS = 6  # SenseNovaU1LocalCompose: image + image2..image6
 U15_MAX_REFS = 10  # 节点支持到 image_100,这里按实用上限收在 10
+FLUX3_MAX_REFS = 10  # 官方上限
+
+FLUX3_UNET = "flux3-image-klein-int8-convrot.safetensors"
+FLUX3_CLIP = "qwen3vl_4b_int8_convrot.safetensors"
+FLUX3_UPSAMPLER = "qwen3.5_9b_flux3_prompt_upsampler_int8_convrot.safetensors"
+# 以下两段原样取自官方 workflows/flux3_klein_int8_mi2i.json 的 Prompt Upsampler 子图(i2i 档)
+FLUX3_UPSAMPLER_SYSTEM = (
+    'You are the prompt upsampler of an image-editing model. You see the reference image(s), attached in order (the first image, the second image, ...), and the user\'s short request. Expand it into ONE detailed, self-contained instruction: the caption the editing model receives together with the same images. Output only the instruction as one continuous English prose block, with no greetings, explanations, Markdown, JSON, coordinates, ids or angle-bracket tokens. Read a vague or conversational request as the most plausible edit of the supplied images.\n\nPick the voice by task shape. When one reference stays and gets bounded changes, write an imperative editing instruction on it ("Remove the ...", "Change the ... to ...", "Zoom in on ..."); a whole-image transformation opens with its scope ("Convert the entire image into ...", "Apply a ... filter over the entire scene", "Horizontally flip the entire image so that ...", "Shift the camera viewpoint to ...", then where the major elements should now be). When the references are drawn into a newly composed frame (combining subjects, a new scene, a garment, object or style donor), write a generation request ("Create a photograph of ...", "Create an anime-style illustration of ...", "Generate a new image featuring ...") that says what to take from each image, by ordinal, and what is newly generated.\n\nKeep every explicit edit, constraint, count, position, style cue and piece of wording, and decide what is left open as one concrete plan. Ground everything in what is actually visible: identify each referent unambiguously by its real appearance, never mention content that is not there, and use every image the user attached. State every end state concretely (which color, how large, which pose, which material) and give new content enough appearance to be generated. Cover the knock-on effects of the change (shadows, reflections, occlusion, perspective, scale, lighting) and say what fills a removed region. A zoom-in names what stays in frame and which neighbors are cropped out; an outpainting continues the scene in the same medium. Describe the change, not the whole scene, and close an editing instruction with one compact clause naming what stays unchanged; transferred people keep their identity, face and accessories unless asked otherwise. Transcribe on-image text verbatim in its original language inside double quotes, with line breaks as \\n, and match the original font, size and color when replacing it. Name recognizable public figures, brands and landmarks you can see. Directions are frame-relative; use no evaluative or quality words. Typical length is 50 to 150 words.\n\nOutput only the instruction.'
+)
+FLUX3_UPSAMPLER_REQUEST = ("Reference images follow in order (the first image, the second image, ...).\n"
+                           "User request: {}\nOutput the caption.")
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +299,68 @@ def build_flux(args, ref_names: list[str]) -> dict:
     return n
 
 
+def build_flux3(args, ref_names: list[str]) -> dict:
+    """FLUX.3 Image Klein(蒸馏版):官方 mi2i workflow 的子图展平。
+
+    和 FLUX.2 的三个差别:
+      - 短 prompt 先过 Qwen3.5-9B upsampler(看着参考图)扩写成完整画面描述,官方要求必须扩写;
+        扩写结果经 PreviewAny 回传,记进 compare_meta.json;
+      - 参考图走 ReferenceMultiLatent(每张缩到 1MP 再 VAE 编码),不再链式 ReferenceLatent;
+      - 16 步、cfg 1、无 FluxGuidance;shift 用官方 alpha=16 -> mu=ln(16),走普通 KSampler。
+    """
+    refs = ref_names[:FLUX3_MAX_REFS]
+    n = {
+        "unet": {"class_type": "UNETLoader", "inputs": {
+            "unet_name": FLUX3_UNET, "weight_dtype": "default"}},
+        "clip": {"class_type": "CLIPLoader", "inputs": {
+            "clip_name": FLUX3_CLIP, "type": "flux3"}},
+        "vae": {"class_type": "VAELoader", "inputs": {"vae_name": FLUX_VAE}},
+        "pup": {"class_type": "CLIPLoader", "inputs": {
+            "clip_name": FLUX3_UPSAMPLER, "type": "flux3"}},
+    }
+    batch, ref_in = {}, {}
+    for i, name in enumerate(refs):
+        n[f"img{i}"] = {"class_type": "LoadImage", "inputs": {"image": name}}
+        batch[f"images.image{i}"] = [f"img{i}", 0]
+        ref_in[f"images.image{i}"] = [f"img{i}", 0]
+    n["batch"] = {"class_type": "BatchImagesNode", "inputs": batch}
+    # top_k=1 等于贪心解码,同一组图 + prompt 扩写结果固定
+    n["upsample"] = {"class_type": "TextGenerate", "inputs": {
+        "clip": ["pup", 0], "image": ["batch", 0],
+        "prompt": FLUX3_UPSAMPLER_REQUEST.format(args.prompt),
+        "system_prompt": FLUX3_UPSAMPLER_SYSTEM, "max_length": 3584,
+        "sampling_mode": "on", "sampling_mode.temperature": 1.0, "sampling_mode.top_k": 1,
+        "sampling_mode.top_p": 0.95, "sampling_mode.min_p": 0.0,
+        "sampling_mode.repetition_penalty": 1.0, "sampling_mode.seed": args.seed,
+        "sampling_mode.presence_penalty": 0.0,
+        "thinking": False, "use_default_template": True, "mtp": "off"}}
+    n["caption"] = {"class_type": "PreviewAny", "inputs": {"source": ["upsample", 0]}}
+
+    n["pos"] = {"class_type": "CLIPTextEncode", "inputs": {
+        "clip": ["clip", 0], "text": ["upsample", 0]}}
+    n["neg"] = {"class_type": "CLIPTextEncode", "inputs": {
+        "clip": ["clip", 0], "text": args.negative}}
+    n["refs"] = {"class_type": "ReferenceMultiLatent", "inputs": {
+        "positive": ["pos", 0], "negative": ["neg", 0], "vae": ["vae", 0],
+        "resolution": "resize", "resolution.megapixels": 1.0, **ref_in}}
+
+    mu = math.log(16.0)
+    n["shift"] = {"class_type": "ModelSamplingFlux", "inputs": {
+        "model": ["unet", 0], "max_shift": mu, "base_shift": mu,
+        "width": args.width, "height": args.height}}
+    n["latent"] = {"class_type": "EmptyFlux2LatentImage", "inputs": {
+        "width": args.width, "height": args.height, "batch_size": 1}}
+    n["ksampler"] = {"class_type": "KSampler", "inputs": {
+        "model": ["shift", 0], "positive": ["refs", 0], "negative": ["refs", 1],
+        "latent_image": ["latent", 0], "seed": args.seed, "steps": 16,
+        "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}}
+    n["decode"] = {"class_type": "VAEDecode", "inputs": {
+        "samples": ["ksampler", 0], "vae": ["vae", 0]}}
+    n["save"] = {"class_type": "SaveImage", "inputs": {
+        "images": ["decode", 0], "filename_prefix": "cmp_flux3klein"}}
+    return n
+
+
 def build_sensenova(args, ref_names: list[str]) -> dict:
     """SenseNova-U1 Compose:image + image2..image6,prompt 用 <image> 占位符绑定。"""
     refs = ref_names[:SENSENOVA_MAX_REFS]
@@ -311,17 +389,18 @@ def build_sensenova(args, ref_names: list[str]) -> dict:
     return n
 
 
-BUILDERS = {"qwen21": build_qwen21, "flux": build_flux, "u15": build_u15,
+BUILDERS = {"qwen21": build_qwen21, "flux": build_flux, "flux3": build_flux3, "u15": build_u15,
             "qwen": build_qwen, "sensenova": build_sensenova}
 LABELS = {
     "qwen21": "Qwen-Image-2.1 (20B int8, Qwen Research 非商用)",
     "flux": "FLUX.2-dev (32B, 权重非商用)",
+    "flux3": "FLUX.3 Image Klein (5.6B int8 蒸馏版, FLUX Kommunity License)",
     "u15": "SenseNova-U1.5-8B-MoT (8B, 本地)",
     "qwen": "Qwen-Image-Edit-2511 (20B, Apache-2.0) [上一代]",
     "sensenova": "SenseNova-U1-8B-MoT (8B, 本地) [上一代]",
 }
 DEFAULT_MODELS = ["qwen21", "flux", "u15"]
-MAX_REFS = {"qwen21": QWEN21_MAX_REFS, "qwen": QWEN_MAX_REFS,
+MAX_REFS = {"qwen21": QWEN21_MAX_REFS, "qwen": QWEN_MAX_REFS, "flux3": FLUX3_MAX_REFS,
             "u15": U15_MAX_REFS, "sensenova": SENSENOVA_MAX_REFS}
 
 
@@ -412,6 +491,9 @@ def main():
             saved = client.download_images(outputs, out)
             dt = time.time() - t0
             results[m] = {"ok": True, "sec": round(dt, 1), "files": saved}
+            if "caption" in outputs:
+                results[m]["upsampled_prompt"] = outputs["caption"]["text"][0]
+                print(f"[扩写] {results[m]['upsampled_prompt']}")
             print(f"[完成] {dt:.1f}s -> {', '.join(saved)}")
         except SystemExit as e:
             # ComfyClient 用 sys.exit 报错;这里接住,让其余模型继续跑

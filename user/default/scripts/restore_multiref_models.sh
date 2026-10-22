@@ -20,9 +20,10 @@
 #                                   (权重非商用许可,但生成的图可商用)
 #
 # 用法:
-#   bash restore_multiref_models.sh          # 两个都校验/恢复
+#   bash restore_multiref_models.sh          # 全部校验/恢复
 #   bash restore_multiref_models.sh qwen     # 只 Qwen
 #   bash restore_multiref_models.sh flux     # 只 FLUX.2
+#   bash restore_multiref_models.sh flux3    # 只 FLUX.3 Klein(int8,约 20G)
 set -euo pipefail
 
 export HF_HUB_ENABLE_HF_TRANSFER=1
@@ -101,13 +102,30 @@ do_flux() {
         loras Flux2TurboComfyv2.safetensors
 }
 
+do_flux3() {
+    echo "==================== FLUX.3 Image Klein ===================="
+    # gated:需先在 HF 页面同意 FLUX Kommunity License。VAE 与 FLUX.2 共用 flux2-vae。
+    # int8 而不是 nvfp4:L40S(sm_89) 没有原生 FP4。
+    local R=black-forest-labs/flux-3-image-klein-comfy
+    get "$R" diffusion_models/flux3-image-klein-int8-convrot.safetensors \
+        diffusion_models flux3-image-klein-int8-convrot.safetensors
+    get "$R" text_encoders/qwen3vl_4b_int8_convrot.safetensors \
+        text_encoders qwen3vl_4b_int8_convrot.safetensors
+    # prompt upsampler(Qwen3.5-9B):官方要求短 prompt 先扩写成完整画面描述
+    get "$R" text_encoders/qwen3.5_9b_flux3_prompt_upsampler_int8_convrot.safetensors \
+        text_encoders qwen3.5_9b_flux3_prompt_upsampler_int8_convrot.safetensors
+    get "$R" vae/flux2-vae.safetensors \
+        vae flux2-vae.safetensors
+}
+
 TARGETS=("$@")
-[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(qwen flux)
+[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(qwen flux flux3)
 for t in "${TARGETS[@]}"; do
     case "$t" in
         qwen) do_qwen;;
         flux) do_flux;;
-        *) echo "未知目标: $t (可选 qwen / flux)";;
+        flux3) do_flux3;;
+        *) echo "未知目标: $t (可选 qwen / flux / flux3)";;
     esac
 done
 
@@ -122,7 +140,10 @@ for f in diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors \
          diffusion_models/flux2_dev_fp8mixed.safetensors \
          text_encoders/mistral_3_small_flux2_fp8.safetensors \
          vae/flux2-vae.safetensors \
-         loras/Flux2TurboComfyv2.safetensors; do
+         loras/Flux2TurboComfyv2.safetensors \
+         diffusion_models/flux3-image-klein-int8-convrot.safetensors \
+         text_encoders/qwen3vl_4b_int8_convrot.safetensors \
+         text_encoders/qwen3.5_9b_flux3_prompt_upsampler_int8_convrot.safetensors; do
     p="$COMFY/models/$f"
     if [ -f "$p" ]; then printf "  OK      %s\n" "$f"
     elif [ -L "$p" ]; then printf "  BROKEN  %s\n" "$f"

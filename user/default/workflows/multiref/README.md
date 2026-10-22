@@ -68,7 +68,23 @@ python user/default/scripts/multiref_compare.py -m flux --flux-turbo --steps 8 \
 | --- | --- |
 | `qwen_image_edit_2511_multiref.api.json` | Qwen-Image-Edit-2511,3 张参考图 |
 | `flux2_dev_multiref.api.json` | FLUX.2-dev,3 张参考图链式 ReferenceLatent |
+| `flux3_klein_multiref.api.json` | FLUX.3 Klein int8,upsampler 扩写 + ReferenceMultiLatent,16 步 |
 | `sensenova_u1_multiref.api.json` | SenseNova-U1 Compose,3 张参考图 |
+
+## FLUX.3 Image Klein(2026-10-22 加入)
+
+5.6B,FLUX Kommunity License(非商用;年营收 < 500 万美元可商用出图),HF 上 gated,需先点同意。
+`bash restore_multiref_models.sh flux3` 下 int8 版(DiT 5.8G + Qwen3-VL-4B 4.9G + upsampler 9.8G,VAE 复用 flux2-vae)。
+L40S 没有原生 FP4,别用 nvfp4。
+
+与 FLUX.2 的差别:短 prompt 必须先过 Qwen3.5-9B upsampler 扩写(官方:不扩写出图很普通);
+参考图走 `ReferenceMultiLatent`(每张缩到 1MP);16 步 cfg 1 无 guidance,shift 取 mu=ln(16)。
+不在默认模型列表里,要 `-m flux3` 显式指定:
+
+```bash
+python user/default/scripts/multiref_compare.py -m flux -m flux3 \
+    --ref a.png --ref b.png --prompt "..." --outdir ./cmp
+```
 
 ## 显存(L40S 46G)
 
